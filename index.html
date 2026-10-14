@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="IoT 物联网管理平台 - 设备管理、固件管理、OTA 升级、告警中心">
+  <meta name="theme-color" content="#1d1e2c">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ctext y='18' font-size='18'%3E%F0%9F%93%A1%3C/text%3E%3C/svg%3E">
+
+  <!-- 资源预连接：提前完成 DNS 解析 + TCP 握手，降低首资源 TTFB -->
+  <link rel="preconnect" href="/api">
+  <link rel="dns-prefetch" href="/api">
+
+  <!-- 首屏关键资源预加载：在浏览器解析 JS 之前就开始下载主入口 -->
+  <link rel="modulepreload" href="/src/main.js" crossorigin>
+
+  <title>%VITE_APP_TITLE%</title>
+  <style>
+    /* 首屏骨架，避免 JS 加载期间白屏 */
+    html, body, #app { height: 100%; margin: 0; }
+    .app-loading {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: #f0f2f5;
+      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      color: #909399;
+      font-size: 14px;
+    }
+    .app-loading__spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #e4e7ed;
+      border-top-color: #409eff;
+      border-radius: 50%;
+      animation: app-loading-spin 0.8s linear infinite;
+    }
+    @keyframes app-loading-spin { to { transform: rotate(360deg); } }
+
+    /* ECharts 异步加载时的占位样式 */
+    .echarts-loading,
+    .echarts-load-failed {
+      width: 100%;
+      height: 100%;
+      min-height: 280px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="app-loading">
+      <div class="app-loading__spinner"></div>
+      <span>正在加载 IoT 平台…</span>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

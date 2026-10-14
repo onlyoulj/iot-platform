@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>IoT 物联网管理平台 — 一站式设备管理与固件升级解决方案</title>
+<meta name="description" content="面向物联网场景的全栈管理平台：设备生命周期管理、固件分发、OTA 远程升级、实时告警、RBAC 权限体系，开箱即用。" />
+<style>
+  :root{
+    --bg:#0a0e1a;
+    --bg2:#0d1326;
+    --surface:rgba(255,255,255,.035);
+    --surface-hi:rgba(255,255,255,.06);
+    --border:rgba(255,255,255,.09);
+    --border-hi:rgba(0,212,255,.4);
+    --text:#eaf0fb;
+    --dim:#8b95a7;
+    --dimmer:#5c6580;
+    --primary:#00d4ff;
+    --primary2:#0099ff;
+    --accent:#7c3aed;
+    --accent2:#ec4899;
+    --green:#22d3ee;
+    --grad:linear-gradient(135deg,#00d4ff 0%,#0099ff 100%);
+    --grad-accent:linear-gradient(135deg,#7c3aed 0%,#ec4899 100%);
+    --grad-text:linear-gradient(120deg,#00d4ff 0%,#7cc4ff 40%,#c084fc 100%);
+    --radius:16px;
+    --shadow:0 20px 60px -20px rgba(0,153,255,.25);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.6;
+    overflow-x:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;text-decoration:none}
+  .container{max-width:1200px;margin:0 auto;padding:0 24px}
+  .mono{font-family:"SF Mono","Cascadia Code",Consolas,monospace}
+
+  /* ===== 背景层 ===== */
+  .bg-grid{
+    position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:
+      linear-gradient(rgba(0,212,255,.04) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(0,212,255,.04) 1px,transparent 1px);
+    background-size:60px 60px;
+    mask-image:radial-gradient(ellipse 80% 60% at 50% 0%,#000 30%,transparent 80%);
+  }
+  .glow{position:fixed;border-radius:50%;filter:blur(100px);pointer-events:none;z-index:0;opacity:.5}
+  .glow.g1{width:600px;height:600px;background:rgba(0,153,255,.35);top:-200px;left:-100px}
+  .glow.g2{width:500px;height:500px;background:rgba(124,58,237,.3);top:300px;right:-150px}
+  .glow.g3{width:450px;height:450px;background:rgba(0,212,255,.2);top:1400px;left:30%}
+
+  /* ===== 导航 ===== */
+  nav{
+    position:fixed;top:0;left:0;right:0;z-index:100;
+    backdrop-filter:blur(16px);
+    background:rgba(10,14,26,.7);
+    border-bottom:1px solid var(--border);
+    transition:all .3s;
+  }
+  nav .container{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px}
+  .logo-mark{
+    width:34px;height:34px;border-radius:9px;background:var(--grad);
+    display:grid;place-items:center;box-shadow:0 6px 20px -4px rgba(0,153,255,.6);
+  }
+  .logo-mark svg{width:20px;height:20px}
+  .nav-links{display:flex;gap:32px;align-items:center}
+  .nav-links a{color:var(--dim);font-size:14px;transition:color .2s}
+  .nav-links a:hover{color:var(--text)}
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:10px 20px;border-radius:10px;font-size:14px;font-weight:600;
+    cursor:pointer;border:none;transition:all .25s;white-space:nowrap;
+  }
+  .btn-primary{background:var(--grad);color:#001624;box-shadow:0 8px 24px -8px rgba(0,153,255,.7)}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 14px 32px -8px rgba(0,153,255,.85)}
+  .btn-ghost{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+  .btn-ghost:hover{background:var(--surface-hi);border-color:var(--border-hi)}
+  .nav-cta{display:flex;gap:12px;align-items:center}
+  @media(max-width:860px){.nav-links{display:none}}
+
+  /* ===== Hero ===== */
+  header.hero{position:relative;z-index:1;padding:140px 0 80px;overflow:hidden}
+  .hero-inner{display:grid;grid-template-columns:1.1fr .9fr;gap:60px;align-items:center}
+  @media(max-width:980px){.hero-inner{grid-template-columns:1fr;gap:40px}}
+  .badge{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:6px 14px;border-radius:999px;
+    background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.25);
+    color:var(--primary);font-size:13px;font-weight:600;margin-bottom:24px;
+  }
+  .badge .dot{width:7px;height:7px;border-radius:50%;background:var(--primary);box-shadow:0 0 10px var(--primary);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  h1.hero-title{
+    font-size:clamp(36px,5.5vw,64px);line-height:1.08;font-weight:800;
+    letter-spacing:-.02em;margin-bottom:20px;
+  }
+  h1.hero-title .grad{background:var(--grad-text);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .hero-sub{font-size:18px;color:var(--dim);max-width:560px;margin-bottom:32px}
+  .hero-cta{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:36px}
+  .hero-meta{display:flex;gap:28px;flex-wrap:wrap}
+  .hero-meta .m{display:flex;flex-direction:column}
+  .hero-meta .m b{font-size:22px;font-weight:700}
+  .hero-meta .m span{font-size:13px;color:var(--dimmer)}
+  .hero-meta .sep{width:1px;background:var(--border)}
+
+  /* Hero 可视化：浮动设备卡片 */
+  .hero-visual{position:relative;height:440px}
+  .device-card{
+    position:absolute;border-radius:14px;background:rgba(13,19,38,.85);
+    border:1px solid var(--border);backdrop-filter:blur(8px);
+    padding:16px;box-shadow:var(--shadow);
+    animation:float 6s ease-in-out infinite;
+  }
+  .device-card .dc-top{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .device-card .dc-ico{width:36px;height:36px;border-radius:9px;display:grid;place-items:center}
+  .device-card .dc-name{font-size:14px;font-weight:600}
+  .device-card .dc-st{font-size:11px;color:var(--primary);font-weight:600}
+  .device-card .dc-row{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);padding:4px 0}
+  .device-card .dc-row b{color:var(--text);font-weight:600}
+  .dc1{top:0;left:0;width:240px;animation-delay:0s}
+  .dc2{top:120px;right:0;width:220px;animation-delay:-2s}
+  .dc3{bottom:40px;left:40px;width:230px;animation-delay:-4s}
+  .dc4{bottom:0;right:30px;width:210px;animation-delay:-3s}
+  .dc-ico.blue{background:rgba(0,153,255,.18);color:#3ba8ff}
+  .dc-ico.green{background:rgba(34,211,238,.16);color:#22d3ee}
+  .dc-ico.purple{background:rgba(124,58,237,.18);color:#a78bfa}
+  .dc-ico.pink{background:rgba(236,72,153,.16);color:#f472b6}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
+  .ring{
+    position:absolute;border-radius:50%;border:1px solid rgba(0,212,255,.15);
+    top:50%;left:50%;transform:translate(-50%,-50%);
+  }
+  .ring.r1{width:300px;height:300px}
+  .ring.r2{width:400px;height:400px;border-color:rgba(124,58,237,.12)}
+  .ring.r3{width:500px;height:500px;border-color:rgba(0,212,255,.08)}
+
+  /* ===== 统计条 ===== */
+  .stats-bar{
+    position:relative;z-index:1;
+    border-top:1px solid var(--border);border-bottom:1px solid var(--border);
+    background:rgba(13,19,38,.5);
+    padding:40px 0;
+  }
+  .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px}
+  @media(max-width:760px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+  .stat{text-align:center}
+  .stat .num{font-size:clamp(32px,4vw,44px);font-weight:800;background:var(--grad-text);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .stat .lbl{font-size:14px;color:var(--dim);margin-top:6px}
+
+  /* ===== 通用 section ===== */
+  section{position:relative;z-index:1;padding:100px 0}
+  .sec-head{text-align:center;max-width:680px;margin:0 auto 60px}
+  .sec-tag{color:var(--primary);font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:14px}
+  .sec-title{font-size:clamp(28px,3.6vw,40px);font-weight:800;letter-spacing:-.01em;margin-bottom:14px}
+  .sec-desc{color:var(--dim);font-size:16px}
+
+  /* ===== 功能网格 ===== */
+  .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  @media(max-width:980px){.feat-grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:640px){.feat-grid{grid-template-columns:1fr}}
+  .feat-card{
+    position:relative;padding:28px;border-radius:var(--radius);
+    background:var(--surface);border:1px solid var(--border);
+    transition:all .3s;overflow:hidden;
+  }
+  .feat-card::before{
+    content:"";position:absolute;inset:0;
+    background:radial-gradient(400px circle at var(--mx,50%) var(--my,0%),rgba(0,212,255,.08),transparent 40%);
+    opacity:0;transition:opacity .3s;
+  }
+  .feat-card:hover{transform:translateY(-4px);border-color:var(--border-hi);background:var(--surface-hi)}
+  .feat-card:hover::before{opacity:1}
+  .feat-ico{
+    width:48px;height:48px;border-radius:12px;display:grid;place-items:center;
+    margin-bottom:18px;font-size:22px;
+  }
+  .feat-card h3{font-size:18px;font-weight:700;margin-bottom:8px}
+  .feat-card p{font-size:14px;color:var(--dim);line-height:1.7}
+  .feat-card .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
+  .feat-card .tags span{font-size:11px;padding:3px 9px;border-radius:6px;background:rgba(255,255,255,.05);color:var(--dim);border:1px solid var(--border)}
+
+  /* ===== 架构图 ===== */
+  .arch-wrap{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:40px;overflow-x:auto}
+  .arch-layer{display:flex;gap:16px;align-items:stretch;margin-bottom:14px}
+  .arch-layer:last-child{margin-bottom:0}
+  .arch-label{
+    flex:0 0 120px;display:flex;flex-direction:column;justify-content:center;
+    padding:16px;border-radius:12px;border:1px solid var(--border);
+    background:rgba(0,0,0,.2);
+  }
+  .arch-label .t{font-size:14px;font-weight:700;color:var(--primary)}
+  .arch-label .s{font-size:12px;color:var(--dimmer);margin-top:2px}
+  .arch-nodes{flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  @media(max-width:760px){.arch-nodes{grid-template-columns:repeat(2,1fr)}.arch-label{flex:0 0 90px}}
+  .arch-node{
+    padding:14px;border-radius:10px;text-align:center;
+    background:rgba(255,255,255,.03);border:1px solid var(--border);
+    font-size:13px;transition:all .25s;
+  }
+  .arch-node:hover{border-color:var(--border-hi);background:rgba(0,212,255,.06)}
+  .arch-node b{display:block;font-weight:600;color:var(--text)}
+  .arch-node small{color:var(--dimmer);font-size:11px}
+
+  /* ===== 优势 ===== */
+  .adv-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+  @media(max-width:980px){.adv-grid{grid-template-columns:repeat(2,1fr)}}
+  .adv-card{padding:30px 24px;border-radius:var(--radius);background:var(--surface);border:1px solid var(--border);transition:all .3s}
+  .adv-card:hover{transform:translateY(-4px);border-color:var(--border-hi)}
+  .adv-num{font-size:36px;font-weight:800;background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:14px}
+  .adv-card h3{font-size:17px;font-weight:700;margin-bottom:8px}
+  .adv-card p{font-size:13px;color:var(--dim);line-height:1.7}
+
+  /* ===== 技术栈 ===== */
+  .stack-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:16px}
+  @media(max-width:860px){.stack-grid{grid-template-columns:repeat(3,1fr)}}
+  .stack-item{
+    padding:24px 16px;border-radius:14px;text-align:center;
+    background:var(--surface);border:1px solid var(--border);
+    transition:all .25s;
+  }
+  .stack-item:hover{transform:translateY(-3px);border-color:var(--border-hi);background:var(--surface-hi)}
+  .stack-item .si-name{font-size:14px;font-weight:700;margin-bottom:4px}
+  .stack-item .si-ver{font-size:11px;color:var(--dimmer)}
+  .stack-logo{width:40px;height:40px;margin:0 auto 12px;border-radius:10px;display:grid;place-items:center;font-weight:800;font-size:18px}
+
+  /* ===== 场景 ===== */
+  .scene-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  @media(max-width:860px){.scene-grid{grid-template-columns:1fr}}
+  .scene-card{
+    position:relative;padding:32px;border-radius:var(--radius);overflow:hidden;
+    background:var(--surface);border:1px solid var(--border);transition:all .3s;
+    min-height:220px;display:flex;flex-direction:column;justify-content:flex-end;
+  }
+  .scene-card:hover{transform:translateY(-4px);border-color:var(--border-hi)}
+  .scene-card .sc-emoji{font-size:40px;margin-bottom:auto}
+  .scene-card h3{font-size:19px;font-weight:700;margin-bottom:8px}
+  .scene-card p{font-size:14px;color:var(--dim)}
+
+  /* ===== CTA ===== */
+  .cta-band{
+    position:relative;z-index:1;margin:40px 0 80px;
+    border-radius:24px;padding:64px 40px;text-align:center;overflow:hidden;
+    background:linear-gradient(135deg,rgba(0,153,255,.15),rgba(124,58,237,.15));
+    border:1px solid var(--border);
+  }
+  .cta-band h2{font-size:clamp(28px,4vw,40px);font-weight:800;margin-bottom:14px}
+  .cta-band p{color:var(--dim);font-size:16px;margin-bottom:28px}
+  .cta-band .glow-bg{position:absolute;inset:0;background:radial-gradient(circle at 30% 0%,rgba(0,212,255,.2),transparent 50%),radial-gradient(circle at 70% 100%,rgba(124,58,237,.2),transparent 50%)}
+
+  /* ===== Footer ===== */
+  footer{position:relative;z-index:1;border-top:1px solid var(--border);padding:48px 0 32px}
+  .foot-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:40px;margin-bottom:40px}
+  @media(max-width:760px){.foot-grid{grid-template-columns:1fr 1fr}}
+  .foot-col h4{font-size:14px;font-weight:700;margin-bottom:16px;color:var(--text)}
+  .foot-col a{display:block;font-size:13px;color:var(--dim);padding:5px 0;transition:color .2s}
+  .foot-col a:hover{color:var(--primary)}
+  .foot-about{font-size:13px;color:var(--dim);max-width:300px;margin-top:14px}
+  .foot-bottom{display:flex;justify-content:space-between;align-items:center;padding-top:24px;border-top:1px solid var(--border);font-size:13px;color:var(--dimmer)}
+
+  /* ===== 滚动渐入 ===== */
+  .reveal{opacity:0;transform:translateY(30px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+
+  /* 滚动条 */
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-track{background:var(--bg)}
+  ::-webkit-scrollbar-thumb{background:#1e2942;border-radius:5px}
+  ::-webkit-scrollbar-thumb:hover{background:#2a385a}
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="glow g1"></div>
+<div class="glow g2"></div>
+<div class="glow g3"></div>
+
+<!-- 导航 -->
+<nav>
+  <div class="container">
+    <div class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#001624" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
+      </div>
+      <span>IoT 平台</span>
+    </div>
+    <div class="nav-links">
+      <a href="#features">功能</a>
+      <a href="#architecture">架构</a>
+      <a href="#advantages">优势</a>
+      <a href="#stack">技术栈</a>
+      <a href="#scenes">场景</a>
+    </div>
+    <div class="nav-cta">
+      <a href="#start" class="btn btn-primary">立即体验</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<header class="hero">
+  <div class="container">
+    <div class="hero-inner">
+      <div class="hero-left">
+        <div class="badge"><span class="dot"></span> v1.0 · 开箱即用的物联网管理平台</div>
+        <h1 class="hero-title">
+          让每一台设备<br/>
+          尽在<span class="grad">掌控之中</span>
+        </h1>
+        <p class="hero-sub">
+          面向物联网场景的一站式管理平台。覆盖设备生命周期、固件分发、OTA 远程升级、实时告警与细粒度权限体系，从边缘到云端，一套系统全部搞定。
+        </p>
+        <div class="hero-cta">
+          <a href="#start" class="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            一键启动
+          </a>
+          <a href="#features" class="btn btn-ghost">了解功能</a>
+        </div>
+        <div class="hero-meta">
+          <div class="m"><b>11+</b><span>功能模块</span></div>
+          <div class="sep"></div>
+          <div class="m"><b>18</b><span>权限点</span></div>
+          <div class="sep"></div>
+          <div class="m"><b>毫秒级</b><span>SSE 推送</span></div>
+          <div class="sep"></div>
+          <div class="m"><b>零依赖</b><span>SQLite 内置</span></div>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="ring r1"></div>
+        <div class="ring r2"></div>
+        <div class="ring r3"></div>
+        <div class="device-card dc1">
+          <div class="dc-top">
+            <div class="dc-ico blue">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            </div>
+            <div><div class="dc-name">网关-A01</div><div class="dc-st">● 在线</div></div>
+          </div>
+          <div class="dc-row"><span>固件</span><b>v2.4.1</b></div>
+          <div class="dc-row"><span>最后心跳</span><b>2s 前</b></div>
+        </div>
+        <div class="device-card dc2">
+          <div class="dc-top">
+            <div class="dc-ico green">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </div>
+            <div><div class="dc-name">传感器-T07</div><div class="dc-st">● 升级中</div></div>
+          </div>
+          <div class="dc-row"><span>进度</span><b>68%</b></div>
+          <div class="dc-row"><span>任务</span><b>OTA-1024</b></div>
+        </div>
+        <div class="device-card dc3">
+          <div class="dc-top">
+            <div class="dc-ico purple">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05M12 22.08V12"/></svg>
+            </div>
+            <div><div class="dc-name">控制器-P03</div><div class="dc-st">● 在线</div></div>
+          </div>
+          <div class="dc-row"><span>产品</span><b>智能开关</b></div>
+          <div class="dc-row"><span>激活</span><b>2026-09-01</b></div>
+        </div>
+        <div class="device-card dc4">
+          <div class="dc-top">
+            <div class="dc-ico pink">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+            </div>
+            <div><div class="dc-name">网关-B02</div><div class="dc-st" style="color:#f472b6">● 告警</div></div>
+          </div>
+          <div class="dc-row"><span>状态</span><b>离线 5min</b></div>
+          <div class="dc-row"><span>级别</span><b>严重</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- 统计条 -->
+<div class="stats-bar">
+  <div class="container">
+    <div class="stats-grid">
+      <div class="stat reveal"><div class="num" data-count="11">0</div><div class="lbl">核心功能模块</div></div>
+      <div class="stat reveal"><div class="num" data-count="18">0</div><div class="lbl">RBAC 权限点</div></div>
+      <div class="stat reveal"><div class="num" data-count="100" data-suffix="%">0</div><div class="lbl">开箱即用</div></div>
+      <div class="stat reveal"><div class="num" data-count="0" data-suffix="ms">0</div><div class="lbl">外部依赖启动</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 功能 -->
+<section id="features">
+  <div class="container">
+    <div class="sec-head reveal">
+      <div class="sec-tag">核心功能</div>
+      <h2 class="sec-title">一个平台，覆盖设备全生命周期</h2>
+      <p class="sec-desc">从设备激活入网到固件远程升级，从实时监控到告警处置，11 个模块协同工作，告别多系统切换。</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat-card reveal">
+        <div class="feat-ico" style="background:rgba(0,153,255,.15);color:#3ba8ff">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        </div>
+        <h3>设备管理</h3>
+        <p>设备激活、心跳在线检测、状态机管理。支持首次激活自动入网，故障状态不被掩盖，离线自动补推升级任务。</p>
+        <div class="tags"><span>在线状态</span><span>心跳检测</span><span>状态机</span></div>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-ico" style="background:rgba(124,58,237,.15);color:#a78bfa">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        </div>
+        <h3>产品管理</h3>
+        <p>按产品维度组织设备，统一固件归属与设备分类。同一产品下的设备共享升级策略，批量管理更高效。</p>
+        <div class="tags"><span>产品建模</span><span>设备分组</span></div>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-ico" style="background:rgba(0,212,255,.15);color:#22d3ee">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+        </div>
+        <h3>固件管理</h3>
+        <p>固件上传、版本管理、发布控制。仅下发已发布版本且取最高版本，自带版本比较防降级，支持鉴权下载与静态直链双地址。</p>
+        <div class="tags"><span>版本控制</span><span>防降级</span><span>鉴权下载</span></div>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-ico" style="background:rgba(236,72,153,.15);color:#f472b6">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </div>
+        <h3>OTA 远程升级</h3>
+        <p>SSE 长连接主动推送 + 轮询补推双保险。离线设备上线自动补推，支持失败重试、任务暂停、设备级明细追踪与结果上报。</p>
+        <div class="tags"><span>SSE 推送</span><span>离线补推</span><span>任务追踪</span></div>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-ico" style="background:rgba(245,158,11,.15);color:#fbbf24">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        </div>
+        <h3>告警中心</h3>
+        <p>设备离线、OTA 失败等异常自动生成告警，按严重程度分级。实时掌握设备健康状态，快速定位处置。</p>
+        <div class="tags"><span>分级告警</span><span>实时通知</span></div>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-ico" style="background:rgba(34,197,94,.15);color:#4ade80">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+        </div>
+        <h3>仪表盘</h3>
+        <p>设备总数、在线分布、固件版本占比、告警趋势一目了然。ECharts 可视化，运维态势实时掌握。</p>
+        <div class="tags"><span>数据概览</span><span>ECharts</span></div>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-ico" style="background:rgba(0,153,255,.15);color:#3ba8ff">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+        </div>
+        <h3>接入指南</h3>
+        <p>设备侧接入文档与示例一站式提供。HMAC Token 鉴权流程清晰，嵌入式端按真实 HTTP 状态码处理。</p>
+        <div class="tags"><span>接入文档</span><span>设备鉴权</span></div>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-ico" style="background:rgba(124,58,237,.15);color:#a78bfa">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="13" width="3" height="5"/><rect x="12" y="9" width="3" height="9"/><rect x="17" y="5" width="3" height="13"/></svg>
+        </div>
+        <h3>API 统计</h3>
+        <p>接口调用量、错误率、热门路由与方法分布实时统计。Redis 加速 O(1) 读取，降级 SQLite 兜底。</p>
+        <div class="tags"><span>调用量</span><span>错误率</span><span>路由分布</span></div>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-ico" style="background:rgba(0,212,255,.15);color:#22d3ee">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9"/></svg>
+        </div>
+        <h3>系统管理</h3>
+        <p>可视化系统配置，敏感项脱敏显示。支持 Redis 连接、Token TTL、注册开关等热更新配置，多实例共享。</p>
+        <div class="tags"><span>配置管理</span><span>热更新</span></div>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-ico" style="background:rgba(236,72,153,.15);color:#f472b6">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <h3>用户管理</h3>
+        <p>用户增删改、分组分配、状态管控。PBKDF2 12 万次迭代加密口令，登录失败统一文案防枚举。</p>
+        <div class="tags"><span>用户管理</span><span>PBKDF2</span></div>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-ico" style="background:rgba(245,158,11,.15);color:#fbbf24">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m2 2 20 20M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8.5M5 9v8a2 2 0 0 0 2 2h2M9 9v3"/></svg>
+        </div>
+        <h3>用户组权限</h3>
+        <p>18 个权限点的 RBAC 体系，权限点改用户组即时生效。内置三组：超管 / 运维 / 只读，支持提权防护与末位超管保护。</p>
+        <div class="tags"><span>RBAC</span><span>即时生效</span><span>提权防护</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 架构 -->
+<section id="architecture">
+  <div class="container">
+    <div class="sec-head reveal">
+      <div class="sec-tag">系统架构</div>
+      <h2 class="sec-title">分层设计，职责清晰</h2>
+      <p class="sec-desc">四层架构各司其职：设备接入、业务服务、数据存储、前端呈现。模块解耦，便于独立演进与水平扩展。</p>
+    </div>
+    <div class="arch-wrap reveal">
+      <div class="arch-layer">
+        <div class="arch-label"><div class="t">应用层</div><div class="s">前端呈现</div></div>
+        <div class="arch-nodes">
+          <div class="arch-node"><b>仪表盘</b><small>数据概览</small></div>
+          <div class="arch-node"><b>设备 / 产品</b><small>资产管理</small></div>
+          <div class="arch-node"><b>固件 / OTA</b><small>升级管理</small></div>
+          <div class="arch-node"><b>告警 / 统计</b><small>运维监控</small></div>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="arch-label"><div class="t">服务层</div><div class="s">业务逻辑</div></div>
+        <div class="arch-nodes">
+          <div class="arch-node"><b>Express 路由</b><small>RESTful API</small></div>
+          <div class="arch-node"><b>鉴权服务</b><small>HMAC + RBAC</small></div>
+          <div class="arch-node"><b>SSE 推送</b><small>实时下发</small></div>
+          <div class="arch-node"><b>OTA 引擎</b><small>任务调度</small></div>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="arch-label"><div class="t">存储层</div><div class="s">数据持久化</div></div>
+        <div class="arch-nodes">
+          <div class="arch-node"><b>SQLite</b><small>主数据库</small></div>
+          <div class="arch-node"><b>Redis</b><small>缓存 / PubSub</small></div>
+          <div class="arch-node"><b>文件存储</b><small>固件包</small></div>
+          <div class="arch-node"><b>config.json</b><small>系统配置</small></div>
+        </div>
+      </div>
+      <div class="arch-layer">
+        <div class="arch-label"><div class="t">接入层</div><div class="s">设备侧</div></div>
+        <div class="arch-nodes">
+          <div class="arch-node"><b>订阅接口</b><small>激活 / 心跳</small></div>
+          <div class="arch-node"><b>SSE 事件</b><small>升级推送</small></div>
+          <div class="arch-node"><b>结果上报</b><small>升级回执</small></div>
+          <div class="arch-node"><b>固件下载</b><small>鉴权 / 直链</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 优势 -->
+<section id="advantages" style="padding-top:40px">
+  <div class="container">
+    <div class="sec-head reveal">
+      <div class="sec-tag">核心优势</div>
+      <h2 class="sec-title">为什么选择它</h2>
+      <p class="sec-desc">不是因为功能多，而是因为每一项都经得起生产环境检验。</p>
+    </div>
+    <div class="adv-grid">
+      <div class="adv-card reveal">
+        <div class="adv-num">01</div>
+        <h3>企业级鉴权</h3>
+        <p>无状态 HMAC Token + 18 权限点 RBAC。改用户组权限即时生效，提权防护与末位超管保护齐备，前后端共用同一份权限定义。</p>
+      </div>
+      <div class="adv-card reveal">
+        <div class="adv-num">02</div>
+        <h3>可靠 OTA</h3>
+        <p>SSE 主动推送 + 轮询补推双保险，离线设备上线自动补推。失败设备可重置重试，任务状态机精准追踪到每一台设备。</p>
+      </div>
+      <div class="adv-card reveal">
+        <div class="adv-num">03</div>
+        <h3>实时推送</h3>
+        <p>SSE 长连接毫秒级下发升级指令。多实例部署通过 Redis Pub/Sub 跨进程广播，单点连接表也能全局触达。</p>
+      </div>
+      <div class="adv-card reveal">
+        <div class="adv-num">04</div>
+        <h3>弹性扩展</h3>
+        <p>Redis 可选接入，连接失败自动降级不阻塞启动。单机 SQLite 零依赖开箱即用，多实例配 Redis 即可水平扩展。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 技术栈 -->
+<section id="stack" style="padding-top:40px">
+  <div class="container">
+    <div class="sec-head reveal">
+      <div class="sec-tag">技术栈</div>
+      <h2 class="sec-title">主流技术，长期可维护</h2>
+      <p class="sec-desc">基于成熟稳定的现代技术栈构建，社区活跃、人才好招、资料充足。</p>
+    </div>
+    <div class="stack-grid reveal">
+      <div class="stack-item">
+        <div class="stack-logo" style="background:#42b88320;color:#42b883">V</div>
+        <div class="si-name">Vue</div><div class="si-ver">3.4</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-logo" style="background:#646cff20;color:#747bff">V</div>
+        <div class="si-name">Vite</div><div class="si-ver">5.4</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-logo" style="background:#409eff20;color:#409eff">E</div>
+        <div class="si-name">Element Plus</div><div class="si-ver">2.9</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-logo" style="background:#aa344d20;color:#d4596e">E</div>
+        <div class="si-name">ECharts</div><div class="si-ver">5.5</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-logo" style="background:#539e4320;color#6ca757">N</div>
+        <div class="si-name">Node.js</div><div class="si-ver">22 LTS</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-logo" style="background:#777bb320;color:#9ba3da">E</div>
+        <div class="si-name">Express</div><div class="si-ver">4.x</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-logo" style="background:#003b5720;color:#3ba8ff">S</div>
+        <div class="si-name">SQLite</div><div class="si-ver">better-sqlite3</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-logo" style="background:#dc382d20;color:#ff6b5e">R</div>
+        <div class="si-name">Redis</div><div class="si-ver">4.x 可选</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-logo" style="background:#f7df1e20;color#f7df1e">JS</div>
+        <div class="si-name">原生 JS</div><div class="si-ver">ES2020+</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-logo" style="background:#3178c620;color:#5ea3e8">TS</div>
+        <div class="si-name">TypeScript</div><div class="si-ver">类型支持</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-logo" style="background:#2496ed20;color:#4db4f0">D</div>
+        <div class="si-name">Docker</div><div class="si-ver">容器部署</div>
+      </div>
+      <div class="stack-item">
+        <div class="stack-logo" style="background:#00963920;color:#3dba6b">N</div>
+        <div class="si-name">Nginx</div><div class="si-ver">反代 / 预压缩</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 场景 -->
+<section id="scenes" style="padding-top:40px">
+  <div class="container">
+    <div class="sec-head reveal">
+      <div class="sec-tag">应用场景</div>
+      <h2 class="sec-title">适用多种物联网场景</h2>
+      <p class="sec-desc">无论是几台设备的原型验证，还是上万台设备的规模运营，都能稳定承载。</p>
+    </div>
+    <div class="scene-grid">
+      <div class="scene-card reveal">
+        <div class="sc-emoji">🏭</div>
+        <h3>工业物联网</h3>
+        <p>工厂网关、传感器、控制器的统一接入与远程运维，固件批量升级不停产，告警实时直达。</p>
+      </div>
+      <div class="scene-card reveal">
+        <div class="sc-emoji">🏠</div>
+        <h3>智能家居</h3>
+        <p>智能开关、网关等消费级设备的入网管理与版本迭代，OTA 升级静默推送，用户体验无感。</p>
+      </div>
+      <div class="scene-card reveal">
+        <div class="sc-emoji">📡</div>
+        <h3>边缘计算节点</h3>
+        <p>分布式边缘网关的集中管控，离线设备上线自动补推升级任务，无需人工介入。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section id="start" style="padding:40px 0 20px">
+  <div class="container">
+    <div class="cta-band reveal">
+      <div class="glow-bg"></div>
+      <div style="position:relative">
+        <h2>准备好让设备井井有条了吗？</h2>
+        <p>一条命令启动，内置种子数据，立即可用。<span class="mono" style="color:var(--primary)">npm start</span></p>
+        <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
+          <a href="http://localhost:5173" class="btn btn-primary">进入控制台</a>
+          <a href="#features" class="btn btn-ghost">查看功能</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="foot-grid">
+      <div class="foot-col">
+        <div class="logo">
+          <div class="logo-mark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#001624" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
+          </div>
+          <span>IoT 物联网管理平台</span>
+        </div>
+        <p class="foot-about">面向物联网场景的一站式设备管理与固件升级平台。开箱即用，企业级鉴权，可靠 OTA，弹性扩展。</p>
+      </div>
+      <div class="foot-col">
+        <h4>产品</h4>
+        <a href="#features">核心功能</a>
+        <a href="#architecture">系统架构</a>
+        <a href="#advantages">核心优势</a>
+        <a href="#scenes">应用场景</a>
+      </div>
+      <div class="foot-col">
+        <h4>技术</h4>
+        <a href="#stack">技术栈</a>
+        <a href="http://localhost:5173">控制台</a>
+        <a href="http://localhost:3000/api/subscribe">设备接入</a>
+      </div>
+      <div class="foot-col">
+        <h4>快速开始</h4>
+        <a href="#">npm start</a>
+        <a href="#">Docker 部署</a>
+        <a href="#">接入指南</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 IoT Platform · 基于 Vue 3 + Express 构建</span>
+      <span>Made with ❤️ for IoT</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  // 滚动渐入
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    });
+  },{threshold:.15});
+  document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+
+  // 数字计数
+  const counters = document.querySelectorAll('[data-count]');
+  const cObs = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        animateCount(e.target);
+        cObs.unobserve(e.target);
+      }
+    });
+  },{threshold:.5});
+  counters.forEach(c=>cObs.observe(c));
+  function animateCount(el){
+    const target = parseInt(el.dataset.count,10);
+    const suffix = el.dataset.suffix || '';
+    const dur = 1400;
+    const start = performance.now();
+    function tick(now){
+      const p = Math.min((now-start)/dur,1);
+      const eased = 1 - Math.pow(1-p,3);
+      el.textContent = Math.round(target*eased) + suffix;
+      if(p<1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // 功能卡片光标跟随
+  document.querySelectorAll('.feat-card').forEach(card=>{
+    card.addEventListener('mousemove',e=>{
+      const r = card.getBoundingClientRect();
+      card.style.setProperty('--mx',(e.clientX-r.left)+'px');
+      card.style.setProperty('--my',(e.clientY-r.top)+'px');
+    });
+  });
+
+  // 导航滚动效果
+  const nav = document.querySelector('nav');
+  window.addEventListener('scroll',()=>{
+    if(window.scrollY > 20) nav.style.background='rgba(10,14,26,.85)';
+    else nav.style.background='rgba(10,14,26,.7)';
+  });
+})();
+</script>
+</body>
+</html>
