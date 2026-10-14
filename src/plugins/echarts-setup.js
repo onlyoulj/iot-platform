@@ -13,12 +13,13 @@
  */
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart, PieChart } from 'echarts/charts'
+import { LineChart, PieChart, BarChart } from 'echarts/charts'
 import {
   GridComponent,
   LegendComponent,
   TitleComponent,
   TooltipComponent,
+  DataZoomComponent,
 } from 'echarts/components'
 import VChart from 'vue-echarts'
 
@@ -26,10 +27,12 @@ use([
   CanvasRenderer,
   LineChart,
   PieChart,
+  BarChart,
   GridComponent,
   LegendComponent,
   TitleComponent,
   TooltipComponent,
+  DataZoomComponent,
 ])
 
 export default VChart

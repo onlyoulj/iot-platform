@@ -21,6 +21,7 @@
 import db from '../db/init.js';
 import { getConfig } from './config-store.js';
 import redis from './redis.js';
+import { evaluateAll } from './alert-engine.js';
 
 /** 扫描间隔（毫秒） */
 const SCAN_INTERVAL_MS = 60000;
@@ -73,6 +74,14 @@ export async function scanOfflineDevices() {
           void redis.removeOnline(id);
         }
       }
+    }
+
+    // 离线状态扫描完成后，评估告警规则（电量/信号/离线超时）
+    // 放在锁内确保多实例下只有一个实例评估，避免重复告警
+    try {
+      evaluateAll();
+    } catch (err) {
+      console.error('[device-monitor] 告警规则评估失败:', err.message);
     }
 
     return offlineDevices.length;

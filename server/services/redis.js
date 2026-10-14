@@ -198,6 +198,45 @@ async function expire(key, seconds) {
   }
 }
 
+/* ============================ List 操作（带降级） ============================ */
+
+async function rpush(key, value) {
+  if (!isReady()) return 0;
+  try {
+    return await client.rPush(key, value);
+  } catch {
+    return 0;
+  }
+}
+
+/** 只保留 [start, stop] 区间元素（负数下标从尾部数），用于限制列表长度 */
+async function ltrim(key, start, stop) {
+  if (!isReady()) return false;
+  try {
+    return await client.lTrim(key, start, stop);
+  } catch {
+    return false;
+  }
+}
+
+async function lrange(key, start, stop) {
+  if (!isReady()) return null;
+  try {
+    return await client.lRange(key, start, stop);
+  } catch {
+    return null;
+  }
+}
+
+async function llen(key) {
+  if (!isReady()) return 0;
+  try {
+    return await client.lLen(key);
+  } catch {
+    return 0;
+  }
+}
+
 /* ============================ Pub/Sub（带降级） ============================ */
 
 /**
@@ -313,6 +352,10 @@ export default {
   hgetall,
   hdel,
   expire,
+  rpush,
+  ltrim,
+  lrange,
+  llen,
   publish,
   subscribe,
   unsubscribe,

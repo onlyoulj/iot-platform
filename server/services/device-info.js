@@ -26,6 +26,7 @@
 import db from '../db/init.js';
 import mqtt from './mqtt.js';
 import redis from './redis.js';
+import { recordMetrics } from './device-metrics.js';
 
 /** 中文数字字段时间格式，与 SQLite datetime('now','localtime') 一致 */
 function nowLocal() {
@@ -162,6 +163,15 @@ export function applyDeviceInfo(device, info) {
   params.push(at);
 
   db.prepare(`UPDATE devices SET ${fields.join(', ')} WHERE id = ?`).run(...params, device.id);
+
+  // 电量/信号有效采样写入历史序列（SQLite + Redis 双写，60s 去重），供趋势图查询
+  if (battery !== null || signal !== null) {
+    try {
+      recordMetrics(device.id, battery, signal);
+    } catch (err) {
+      console.error('[device-info] 指标历史写入失败:', err.message);
+    }
+  }
 
   // 设备信息上报视为在线心跳（刷新 last_online，未上线设备置为在线）
   const status = device.status;

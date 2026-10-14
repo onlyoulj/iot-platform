@@ -33,6 +33,12 @@ registerInfoSubscription();
 // MQTT 设备上线补推：设备通过 MQTT 上线后延迟补推积压的升级任务
 import { registerRepushListener } from './services/mqtt-repush.js';
 registerRepushListener();
+// 设备远程控制回执监听（device/{id}/uplink 的 control_ack）
+import { registerControlAck } from './services/device-control.js';
+registerControlAck();
+// 设备影子上行监听（device/{id}/uplink 的 shadow_report / shadow_ack）
+import { registerShadowListener } from './services/thing-model.js';
+registerShadowListener();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();

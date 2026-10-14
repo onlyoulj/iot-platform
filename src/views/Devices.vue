@@ -191,7 +191,7 @@
     </el-dialog>
 
     <!-- 设备详情 -->
-    <el-drawer v-model="showDrawer" :title="drawerDevice?.name" size="500px">
+    <el-drawer v-model="showDrawer" :title="drawerDevice?.name" size="620px">
       <template v-if="drawerDevice">
         <el-descriptions :column="1" border>
           <el-descriptions-item label="设备名称">{{ drawerDevice.name }}</el-descriptions-item>
@@ -244,6 +244,222 @@
           </el-descriptions-item>
           <el-descriptions-item label="位置">{{ orDash(drawerDevice.location) }}</el-descriptions-item>
         </el-descriptions>
+
+        <!-- 电量 / 信号 / 属性历史趋势 -->
+        <div class="drawer-section">
+          <div class="trend-header">
+            <h4>历史趋势</h4>
+            <div class="trend-controls">
+              <el-select v-model="trendMetric" size="small" style="width: 130px" @change="loadTrend">
+                <el-option v-for="opt in trendMetricOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+              </el-select>
+              <el-radio-group v-model="trendRange" size="small" @change="loadTrend">
+                <el-radio-button
+                  v-for="opt in TREND_RANGES"
+                  :key="opt.value"
+                  :value="opt.value"
+                >{{ opt.label }}</el-radio-button>
+              </el-radio-group>
+            </div>
+          </div>
+          <div v-loading="trendLoading" class="trend-chart-wrap">
+            <v-chart
+              v-if="trendPoints.length"
+              class="trend-chart"
+              :option="trendOption"
+              autoresize
+            />
+            <el-empty
+              v-else-if="!trendLoading"
+              description="暂无趋势数据，等待设备上报"
+              :image-size="64"
+            />
+          </div>
+          <div v-if="trendPoints.length" class="trend-footnote">
+            共 {{ trendPoints.length }} 个采样点
+            <template v-if="trendMeta.source === 'redis'">（Redis 热数据）</template>
+            <template v-else-if="trendMeta.bucket">（已按 {{ trendMeta.bucket }}s 聚合降采样）</template>
+            · 可在图内滚轮缩放 / 拖动底部滑块调整时间轴
+          </div>
+        </div>
+
+        <!-- 设备影子 -->
+        <div class="drawer-section">
+          <div class="shadow-header">
+            <h4>设备影子</h4>
+            <span v-if="shadow.desired_version || shadow.reported_version" class="shadow-version">
+              v{{ shadow.desired_version }} / v{{ shadow.reported_version }}
+            </span>
+          </div>
+          <div v-loading="shadowLoading" class="shadow-body">
+            <template v-if="shadowProps.length">
+              <el-table :data="shadowProps" size="small" border style="width: 100%">
+                <el-table-column prop="identifier" label="属性" min-width="90">
+                  <template #default="{ row }"><span class="mono">{{ row.identifier }}</span></template>
+                </el-table-column>
+                <el-table-column label="期望(desired)" min-width="100">
+                  <template #default="{ row }">
+                    <span v-if="row.desired !== undefined" class="shadow-desired mono">
+                      {{ formatShadowValue(row.desired) }}
+                    </span>
+                    <span v-else class="shadow-empty">--</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="上报(reported)" min-width="100">
+                  <template #default="{ row }">
+                    <span v-if="row.reported !== undefined" class="mono">
+                      {{ formatShadowValue(row.reported) }}{{ row.unit }}
+                    </span>
+                    <span v-else class="shadow-empty">--</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="状态" width="90">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.desired !== undefined" type="warning" size="small">待同步</el-tag>
+                    <el-tag v-else-if="row.reported !== undefined" type="success" size="small">已同步</el-tag>
+                    <el-tag v-else type="info" size="small">未上报</el-tag>
+                  </template>
+                </el-table-column>
+              </el-table>
+
+              <!-- 期望态编辑（有可写属性时） -->
+              <div v-if="writableProps.length && canControl" class="shadow-edit">
+                <div class="shadow-edit__title">修改期望值（按物模型校验，MQTT 下发 shadow_set）</div>
+                <div v-for="p in writableProps" :key="p.identifier" class="shadow-edit__row">
+                  <span class="shadow-edit__label">{{ p.name }}<span class="mono shadow-edit__id">({{ p.identifier }})</span></span>
+                  <el-switch
+                    v-if="p.data_type === 'bool'"
+                    v-model="desiredForm[p.identifier]"
+                  />
+                  <el-select v-else-if="p.data_type === 'enum'" v-model="desiredForm[p.identifier]" size="small" style="width: 140px">
+                    <el-option
+                      v-for="opt in String(p.unit || '').split(',').filter(Boolean)"
+                      :key="opt"
+                      :label="opt"
+                      :value="opt.trim()"
+                    />
+                  </el-select>
+                  <el-input-number
+                    v-else-if="p.data_type === 'int' || p.data_type === 'float'"
+                    v-model="desiredForm[p.identifier]"
+                    size="small"
+                    style="width: 140px"
+                    :min="p.constraint_min ?? -Infinity"
+                    :max="p.constraint_max ?? Infinity"
+                  />
+                  <el-input v-else v-model="desiredForm[p.identifier]" size="small" style="width: 140px" />
+                </div>
+                <el-button
+                  type="primary"
+                  size="small"
+                  :loading="shadowSaving"
+                  :disabled="!hasDesiredChange"
+                  @click="saveDesired"
+                >
+                  <el-icon><Promotion /></el-icon> 下发期望态
+                </el-button>
+                <span v-if="shadowSavingMsg" class="shadow-edit__msg">{{ shadowSavingMsg }}</span>
+              </div>
+            </template>
+            <el-empty
+              v-else-if="!shadowLoading"
+              description="该产品未定义物模型属性，请在「产品管理 → 物模型」中配置"
+              :image-size="48"
+            />
+          </div>
+        </div>
+
+        <!-- 远程控制（需 device:edit 权限） -->
+        <div v-if="canControl" class="drawer-section">
+          <div class="ctrl-header">
+            <h4>远程控制</h4>
+            <el-tag
+              :type="drawerDevice.status === 'online' ? 'success' : 'info'"
+              size="small"
+            >{{ drawerDevice.status === 'online' ? '在线可下发' : '设备离线' }}</el-tag>
+          </div>
+
+          <el-form label-position="top" size="small" class="ctrl-form">
+            <el-form-item label="指令模板">
+              <el-select v-model="ctrl.command" style="width: 100%" @change="onCommandPreset">
+                <el-option
+                  v-for="opt in CTRL_COMMANDS"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="参数（JSON）">
+              <el-input
+                v-model="ctrl.paramsText"
+                type="textarea"
+                :rows="3"
+                placeholder='{"key":"value"}，无需参数留空'
+              />
+              <div v-if="ctrl.paramsError" class="ctrl-error">{{ ctrl.paramsError }}</div>
+            </el-form-item>
+            <el-button
+              type="primary"
+              :loading="ctrl.sending"
+              :disabled="drawerDevice.status !== 'online'"
+              @click="sendCommand"
+            >
+              <el-icon><Promotion /></el-icon> 下发指令
+            </el-button>
+            <span v-if="drawerDevice.status !== 'online'" class="ctrl-hint">设备离线，指令可能无法送达</span>
+          </el-form>
+
+          <div v-loading="ctrl.loadingHistory" class="ctrl-history">
+            <div v-for="c in commandHistory" :key="c.cmd_id" class="ctrl-item">
+              <div class="ctrl-item__head">
+                <el-tag :type="ctrlStatus(c.status).type" size="small">
+                  {{ ctrlStatus(c.status).text }}
+                </el-tag>
+                <span class="ctrl-item__cmd">{{ c.command }}</span>
+                <span class="ctrl-item__time">{{ formatDateTime(c.created_at) }}</span>
+              </div>
+              <div v-if="c.params" class="ctrl-item__params">{{ c.params }}</div>
+              <div v-if="c.result" class="ctrl-item__result">{{ c.result }}</div>
+            </div>
+            <el-empty
+              v-if="!commandHistory.length && !ctrl.loadingHistory"
+              description="暂无指令记录"
+              :image-size="48"
+            />
+          </div>
+        </div>
+
+        <!-- 生命周期时间轴 -->
+        <div class="drawer-section">
+          <div class="shadow-header">
+            <h4>生命周期</h4>
+            <span v-if="timelineEvents.length" class="shadow-version">{{ timelineEvents.length }} 条事件</span>
+          </div>
+          <div v-loading="timelineLoading" class="timeline-body">
+            <el-timeline v-if="timelineEvents.length" class="timeline-list">
+              <el-timeline-item
+                v-for="(ev, i) in timelineEvents"
+                :key="i"
+                :timestamp="formatDateTime(ev.time)"
+                :type="timelineDotType(ev)"
+                placement="top"
+                :hollow="i > 0"
+              >
+                <div class="timeline-item">
+                  <span class="timeline-type" :class="'timeline-type--' + ev.type">{{ timelineTypeLabel(ev) }}</span>
+                  <span class="timeline-title">{{ ev.title }}</span>
+                </div>
+                <div v-if="ev.detail" class="timeline-detail">{{ ev.detail }}</div>
+              </el-timeline-item>
+            </el-timeline>
+            <el-empty
+              v-else-if="!timelineLoading"
+              description="暂无事件记录"
+              :image-size="48"
+            />
+          </div>
+        </div>
 
         <div v-if="drawerDevice.props?.length" class="drawer-section">
           <h4>实时属性</h4>
@@ -387,16 +603,18 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage } from '@/utils/element'
 import StatCards from '@/components/StatCards.vue'
-import { deviceApi, subscribeApi } from '@/utils/api'
+import VChart from '@/plugins/echarts'
+import { deviceApi, subscribeApi, shadowApi, productApi, timelineApi } from '@/utils/api'
 import { confirm } from '@/utils/dialog'
 import { copyText } from '@/utils/clipboard'
 import { usePagination } from '@/composables/usePagination'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { DEVICE_STATUS, DEVICE_STATUS_OPTIONS, dictValue } from '@/constants'
 import { formatDateTime, orDash, formatNumber } from '@/utils/format'
+import { hasPermission } from '@/utils/auth'
 
 /* ------------------------- 设备信息展示辅助 ------------------------- */
 
@@ -506,10 +724,437 @@ async function loadProducts() {
 /* ------------------------- 详情抽屉 ------------------------- */
 const showDrawer = ref(false)
 const drawerDevice = ref(null)
+/* ------------------------- 设备影子 ------------------------- */
+const shadow = ref({})
+const shadowProps = ref([]) // 物模型属性 + desired/reported 值合并视图
+const shadowLoading = ref(false)
+const shadowSaving = ref(false)
+const shadowSavingMsg = ref('')
+const desiredForm = reactive({})
+let shadowDeviceId = null
+
+/** 产品可写属性（access_mode 含 w） */
+const writableProps = computed(() => shadowProps.value.filter((p) => p.access_mode.includes('w')))
+const hasDesiredChange = computed(() => {
+  const current = shadow.value.desired || {}
+  return Object.keys(desiredForm.value || {}).some(
+    (k) => desiredForm.value[k] !== undefined && desiredForm.value[k] !== current[k]
+  )
+})
+
+function formatShadowValue(v) {
+  if (typeof v === 'boolean') return v ? '开' : '关'
+  return String(v)
+}
+
+/** 拉取影子 + 物模型属性，合并为表格视图 */
+async function loadShadow(device) {
+  shadowDeviceId = device.id
+  shadowLoading.value = true
+  shadowSavingMsg.value = ''
+  try {
+    const [sh, props] = await Promise.all([
+      shadowApi.get(device.id),
+      device.product_id ? productApi.properties(device.product_id) : Promise.resolve([]),
+    ])
+    if (shadowDeviceId !== device.id) return
+    shadow.value = sh || {}
+    shadowProps.value = (props || []).map((p) => ({
+      ...p,
+      desired: sh?.desired?.[p.identifier],
+      reported: sh?.reported?.[p.identifier],
+    }))
+    // 同步趋势图可选指标（物模型数值属性）
+    syncTrendMetricOptions(props || [])
+    // 初始化期望态编辑表单（默认当前 desired 或空）
+    for (const p of writableProps.value) {
+      desiredForm[p.identifier] =
+        sh?.desired?.[p.identifier] ?? (p.data_type === 'bool' ? false : undefined)
+    }
+  } catch (err) {
+    if (shadowDeviceId === device.id) {
+      shadowProps.value = []
+      ElMessage.error(err.message || '影子加载失败')
+    }
+  } finally {
+    if (shadowDeviceId === device.id) shadowLoading.value = false
+  }
+}
+
+async function saveDesired() {
+  const device = drawerDevice.value
+  if (!device) return
+  const desired = {}
+  for (const p of writableProps.value) {
+    const v = desiredForm[p.identifier]
+    if (v !== undefined && v !== '') desired[p.identifier] = v
+  }
+  if (!Object.keys(desired).length) return
+
+  shadowSaving.value = true
+  shadowSavingMsg.value = ''
+  try {
+    const res = await shadowApi.setDesired(device.id, desired)
+    shadowSavingMsg.value = res.delivered
+      ? `已下发（v${res.version}），等待设备上报`
+      : `已写入（v${res.version}），MQTT 未送达`
+    ElMessage.success(shadowSavingMsg.value)
+    await loadShadow(device)
+  } catch (err) {
+    ElMessage.error(err.message || '期望态下发失败')
+  } finally {
+    shadowSaving.value = false
+  }
+}
+
+/* ------------------------- 生命周期时间轴 ------------------------- */
+const timelineEvents = ref([])
+const timelineLoading = ref(false)
+let timelineDeviceId = null
+
+const TIMETYPE_LABELS = {
+  alert: '告警',
+  command: '控制指令',
+  upgrade: '固件升级',
+  mqtt: 'MQTT',
+  shadow: '设备影子',
+  lifecycle: '生命周期',
+}
+function timelineTypeLabel(ev) {
+  const base = TIMETYPE_LABELS[ev.type] || ev.type
+  if (ev.type === 'alert' && ev.status) {
+    return `${base}·${dictValue(ALERT_LEVEL, ev.status, undefined, ev.status)}`
+  }
+  return base
+}
+function timelineDotType(ev) {
+  const map = {
+    alert: 'warning',
+    command: 'primary',
+    upgrade: 'success',
+    mqtt: 'info',
+    shadow: 'primary',
+    lifecycle: 'success',
+  }
+  return map[ev.type] || 'info'
+}
+
+async function loadTimeline(device) {
+  timelineDeviceId = device.id
+  timelineLoading.value = true
+  try {
+    const events = await timelineApi.get(device.id, 100)
+    if (timelineDeviceId === device.id) timelineEvents.value = events || []
+  } catch (err) {
+    if (timelineDeviceId === device.id) {
+      timelineEvents.value = []
+      ElMessage.error(err.message || '时间轴加载失败')
+    }
+  } finally {
+    if (timelineDeviceId === device.id) timelineLoading.value = false
+  }
+}
+
 function showDetail(row) {
   drawerDevice.value = row
   showDrawer.value = true
+  trendRange.value = '24h'
+  loadTrend(row.id)
+  loadShadow(row)
+  loadTimeline(row)
+  if (canControl.value) loadCommands(row.id)
 }
+
+/* ------------------------- 远程控制 ------------------------- */
+
+const canControl = computed(() => hasPermission('device:edit'))
+
+/** 指令模板预设 */
+const CTRL_COMMANDS = [
+  { value: 'reboot', label: '重启设备', params: '' },
+  { value: 'sync_time', label: '同步时间', params: '' },
+  { value: 'get_status', label: '查询状态', params: '' },
+  { value: 'set_config', label: '设置配置', params: '{\n  "interval": 60\n}' },
+  { value: 'custom', label: '自定义指令', params: '' },
+]
+
+const CTRL_STATUS_MAP = {
+  sent: { text: '已发送', type: 'info' },
+  delivered: { text: '已送达', type: 'warning' },
+  success: { text: '成功', type: 'success' },
+  failed: { text: '失败', type: 'danger' },
+  timeout: { text: '超时', type: 'info' },
+}
+function ctrlStatus(s) {
+  return CTRL_STATUS_MAP[s] || { text: s || '未知', type: 'info' }
+}
+
+const ctrl = reactive({
+  command: 'reboot',
+  paramsText: '',
+  paramsError: '',
+  sending: false,
+  loadingHistory: false,
+})
+const commandHistory = ref([])
+/** 轮询定时器：发送后等待设备回执 */
+let cmdPollTimer = null
+/** 记录当前抽屉设备，避免切换后旧轮询覆盖 */
+let ctrlDeviceId = null
+
+function onCommandPreset(val) {
+  const preset = CTRL_COMMANDS.find((c) => c.value === val)
+  ctrl.paramsText = preset?.params || ''
+  ctrl.paramsError = ''
+}
+
+async function loadCommands(id) {
+  ctrlDeviceId = id
+  ctrl.loadingHistory = true
+  try {
+    const list = await deviceApi.commands(id)
+    if (ctrlDeviceId === id) commandHistory.value = list || []
+  } catch (err) {
+    if (ctrlDeviceId === id) ElMessage.error(err.message || '指令历史加载失败')
+  } finally {
+    if (ctrlDeviceId === id) ctrl.loadingHistory = false
+  }
+}
+
+/** 解析参数 JSON，非法返回错误提示 */
+function parseParams() {
+  const text = ctrl.paramsText.trim()
+  if (!text) return { ok: true, value: undefined }
+  try {
+    return { ok: true, value: JSON.parse(text) }
+  } catch (err) {
+    return { ok: false, error: `参数不是合法 JSON：${err.message}` }
+  }
+}
+
+async function sendCommand() {
+  const device = drawerDevice.value
+  if (!device) return
+
+  const parsed = parseParams()
+  if (!parsed.ok) {
+    ctrl.paramsError = parsed.error
+    return
+  }
+  ctrl.paramsError = ''
+
+  ctrl.sending = true
+  let result
+  try {
+    result = await deviceApi.command(device.id, {
+      command: ctrl.command,
+      params: parsed.value,
+    })
+  } catch (err) {
+    ElMessage.error(err.message || '指令下发失败')
+    ctrl.sending = false
+    return
+  }
+  ctrl.sending = false
+
+  if (result.delivered) {
+    ElMessage.success(`指令「${ctrl.command}」已下发，等待设备回执`)
+  } else {
+    ElMessage.warning('指令未送达：MQTT 通道不可用，设备可能离线')
+  }
+
+  await loadCommands(device.id)
+  // 轮询等待回执：每 3s 刷新，直到无 delivered 态或最多 10 次
+  startCmdPolling(device.id)
+}
+
+function startCmdPolling(id) {
+  stopCmdPolling()
+  let count = 0
+  cmdPollTimer = setInterval(async () => {
+    count += 1
+    if (count > 10 || ctrlDeviceId !== id) {
+      stopCmdPolling()
+      return
+    }
+    await loadCommands(id)
+    // 全部指令已到终态（success/failed/timeout）则停止
+    const pending = commandHistory.value.some(
+      (c) => c.status === 'sent' || c.status === 'delivered'
+    )
+    if (!pending) stopCmdPolling()
+  }, 3000)
+}
+
+function stopCmdPolling() {
+  if (cmdPollTimer) {
+    clearInterval(cmdPollTimer)
+    cmdPollTimer = null
+  }
+}
+
+// 抽屉关闭时停止回执轮询，避免后台空跑
+watch(showDrawer, (open) => {
+  if (!open) stopCmdPolling()
+})
+
+/* ------------------------- 电量 / 信号趋势 ------------------------- */
+
+/** 时间窗预设（与后端 RANGE_PRESETS 对齐） */
+const TREND_RANGES = [
+  { label: '1小时', value: '1h' },
+  { label: '6小时', value: '6h' },
+  { label: '24小时', value: '24h' },
+  { label: '7天', value: '7d' },
+  { label: '30天', value: '30d' },
+]
+
+const trendRange = ref('24h')
+const trendMetric = ref('battery')
+const trendLoading = ref(false)
+const trendPoints = ref([]) // [{time, value}]
+const trendMeta = ref({ source: '', bucket: 0 })
+const trendLabel = ref('电量')
+const trendUnit = ref('%')
+/** 记录当前加载的设备，避免抽屉切换后旧响应覆盖新设备数据 */
+let trendDeviceId = null
+
+/** 可选趋势指标：电量/信号 + 物模型数值属性（loadShadow 后更新） */
+const trendMetricOptions = ref([
+  { value: 'battery', label: '电量 (%)' },
+  { value: 'signal', label: '信号 (dBm)' },
+])
+
+function syncTrendMetricOptions(props) {
+  const base = [
+    { value: 'battery', label: '电量 (%)' },
+    { value: 'signal', label: '信号 (dBm)' },
+  ]
+  const numProps = (props || [])
+    .filter((p) => (p.data_type === 'int' || p.data_type === 'float') && p.access_mode.includes('r'))
+    .map((p) => ({ value: p.identifier, label: `${p.name}${p.unit ? '(' + p.unit + ')' : ''}` }))
+  trendMetricOptions.value = [...base, ...numProps]
+  // 当前选中的物模型属性被删除时回退电量
+  if (!trendMetricOptions.value.some((o) => o.value === trendMetric.value)) {
+    trendMetric.value = 'battery'
+  }
+}
+
+async function loadTrend(range = trendRange.value) {
+  const device = drawerDevice.value
+  if (!device) return
+  trendDeviceId = device.id
+  trendLoading.value = true
+  try {
+    if (trendMetric.value === 'battery' || trendMetric.value === 'signal') {
+      const data = await deviceApi.metrics(device.id, range)
+      if (trendDeviceId !== device.id) return
+      const points = (data?.points || [])
+        .map((p) => ({ time: p.time, value: p[trendMetric.value] }))
+        .filter((p) => p.value !== null && p.value !== undefined)
+      trendPoints.value = points
+      trendMeta.value = { source: data?.source || '', bucket: data?.bucket || 0 }
+      trendLabel.value = trendMetric.value === 'battery' ? '电量' : '信号'
+      trendUnit.value = trendMetric.value === 'battery' ? '%' : ' dBm'
+    } else {
+      const data = await shadowApi.propsHistory(device.id, trendMetric.value, range)
+      if (trendDeviceId !== device.id) return
+      trendPoints.value = data?.points || []
+      trendMeta.value = { source: '', bucket: data?.bucket || 0 }
+      trendLabel.value = data?.name || trendMetric.value
+      trendUnit.value = data?.unit || ''
+    }
+  } catch (err) {
+    if (trendDeviceId === device.id) {
+      trendPoints.value = []
+      ElMessage.error(err.message || '趋势数据加载失败')
+    }
+  } finally {
+    if (trendDeviceId === device.id) trendLoading.value = false
+  }
+}
+
+/** 'YYYY-MM-DD HH:MM:SS'（本地时间）→ 时间戳 ms */
+function parseLocalTime(str) {
+  return new Date(String(str).replace(' ', 'T')).getTime()
+}
+
+const trendOption = computed(() => {
+  const points = trendPoints.value
+  if (!points.length) return {}
+
+  const seriesData = []
+  for (const p of points) {
+    const ts = parseLocalTime(p.time)
+    if (Number.isFinite(ts) && p.value !== null && p.value !== undefined) {
+      seriesData.push([ts, Number(p.value)])
+    }
+  }
+  if (!seriesData.length) return {}
+
+  const span = seriesData[seriesData.length - 1][0] - seriesData[0][0]
+  const dayMs = 24 * 3600 * 1000
+  // 数据太密时缩小滑块默认窗口（约 200 个点），避免长范围下曲线糊成一团
+  const windowMs = span > dayMs * 2 ? dayMs : span
+  const endTime = seriesData[seriesData.length - 1][0]
+
+  return {
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        if (!params?.length) return ''
+        const d = new Date(params[0].value[0])
+        const pad = (n) => String(n).padStart(2, '0')
+        const time = `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+        return `${time}<br/>${trendLabel.value}：${params[0].value[1]}${trendUnit.value}`
+      },
+    },
+    grid: { left: 50, right: 20, top: 20, bottom: 44 },
+    xAxis: { type: 'time', axisLabel: { fontSize: 10 } },
+    yAxis: {
+      type: 'value',
+      name: trendUnit.value,
+      nameTextStyle: { fontSize: 10 },
+      axisLabel: { fontSize: 10 },
+      splitLine: { lineStyle: { type: 'dashed', opacity: 0.4 } },
+    },
+    dataZoom: [
+      { type: 'inside', startValue: endTime - windowMs, endValue: endTime },
+      {
+        type: 'slider',
+        height: 16,
+        bottom: 6,
+        startValue: endTime - windowMs,
+        endValue: endTime,
+        labelFormatter: (val) => {
+          const d = new Date(val)
+          const pad = (n) => String(n).padStart(2, '0')
+          return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+        },
+      },
+    ],
+    series: [
+      {
+        name: trendLabel.value,
+        type: 'line',
+        showSymbol: false,
+        smooth: true,
+        itemStyle: { color: '#409eff' },
+        lineStyle: { width: 2, color: '#409eff' },
+        areaStyle: {
+          color: {
+            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(64,158,255,0.25)' },
+              { offset: 1, color: 'rgba(64,158,255,0.02)' },
+            ],
+          },
+        },
+        data: seriesData,
+      },
+    ],
+  }
+})
 
 /* ------------------------- 固件订阅链接 ------------------------- */
 const showSubDialog = ref(false)
@@ -732,6 +1377,224 @@ onMounted(() => {
   margin-bottom: 12px;
   font-size: 14px;
   color: #303133;
+}
+.trend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.trend-header h4 {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+.trend-chart-wrap {
+  min-height: 240px;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  padding: 8px 4px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.trend-chart {
+  width: 100%;
+  height: 240px;
+}
+.trend-footnote {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.6;
+}
+
+/* ---------------- 设备影子 ---------------- */
+.shadow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.shadow-header h4 {
+  margin-bottom: 0;
+}
+.shadow-version {
+  font-size: 12px;
+  color: #909399;
+  font-family: Consolas, Monaco, monospace;
+}
+.shadow-body {
+  min-height: 60px;
+}
+.shadow-desired {
+  color: #e6a23c;
+  font-weight: 500;
+}
+.shadow-empty {
+  color: #c0c4cc;
+}
+.shadow-edit {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px dashed #ebeef5;
+  border-radius: 6px;
+}
+.shadow-edit__title {
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #909399;
+}
+.shadow-edit__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.shadow-edit__label {
+  min-width: 130px;
+  font-size: 13px;
+  color: #303133;
+}
+.shadow-edit__id {
+  color: #909399;
+  font-size: 11px;
+  margin-left: 4px;
+}
+.shadow-edit__msg {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #67c23a;
+}
+
+/* ---------------- 生命周期时间轴 ---------------- */
+.timeline-body {
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 4px 4px 0;
+}
+.timeline-list {
+  padding-left: 4px;
+}
+.timeline-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.timeline-type {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.timeline-type--alert {
+  background: #fef0f0;
+  color: #f56c6c;
+}
+.timeline-type--command {
+  background: #ecf5ff;
+  color: #409eff;
+}
+.timeline-type--upgrade {
+  background: #f0f9eb;
+  color: #67c23a;
+}
+.timeline-type--mqtt {
+  background: #f4f4f5;
+  color: #909399;
+}
+.timeline-type--shadow {
+  background: #fdf6ec;
+  color: #e6a23c;
+}
+.timeline-type--lifecycle {
+  background: #f0f9eb;
+  color: #67c23a;
+}
+.timeline-title {
+  font-size: 13px;
+  color: #303133;
+  word-break: break-all;
+}
+.timeline-detail {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #909399;
+  word-break: break-all;
+}
+
+/* ---------------- 远程控制 ---------------- */
+.ctrl-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.ctrl-header h4 {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+.ctrl-form {
+  margin-bottom: 12px;
+}
+.ctrl-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #f56c6c;
+  line-height: 1.5;
+}
+.ctrl-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #909399;
+}
+.ctrl-history {
+  margin-top: 12px;
+  max-height: 280px;
+  overflow-y: auto;
+  border-top: 1px dashed #ebeef5;
+  padding-top: 8px;
+}
+.ctrl-item {
+  padding: 8px 0;
+  border-bottom: 1px dashed #f0f2f5;
+}
+.ctrl-item:last-child {
+  border-bottom: none;
+}
+.ctrl-item__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ctrl-item__cmd {
+  font-size: 13px;
+  font-weight: 500;
+  color: #303133;
+}
+.ctrl-item__time {
+  margin-left: auto;
+  font-size: 11px;
+  color: #909399;
+}
+.ctrl-item__params,
+.ctrl-item__result {
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: #f5f7fa;
+  border-radius: 4px;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.5;
+  word-break: break-all;
+}
+.ctrl-item__result {
+  background: #fef0f0;
+  color: #f56c6c;
 }
 .prop-card {
   margin-bottom: 12px;

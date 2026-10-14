@@ -27,6 +27,70 @@
       </el-col>
     </el-row>
 
+    <!-- API 调用 + MQTT 消息 汇总（需 stats:view 权限，无权限或无数据时整行隐藏） -->
+    <el-row v-if="apiTrend.length || mqttTrend.length" :gutter="16" style="margin-top: 16px">
+      <el-col v-if="apiTrend.length" :xs="24" :lg="12">
+        <div class="chart-card">
+          <div class="chart-header">
+            <h3>API 调用汇总</h3>
+            <el-link type="primary" underline="never" @click="router.push('/stats')">
+              查看详情
+            </el-link>
+          </div>
+          <div class="metric-row">
+            <div class="metric">
+              <span class="metric__label">总调用</span>
+              <span class="metric__value">{{ formatNumber(apiOverview.total) }}</span>
+            </div>
+            <div class="metric">
+              <span class="metric__label">今日</span>
+              <span class="metric__value">{{ formatNumber(apiOverview.today) }}</span>
+            </div>
+            <div class="metric">
+              <span class="metric__label">错误率</span>
+              <span class="metric__value" :class="{ 'metric__value--danger': apiOverview.errorRate > 5 }">
+                {{ apiOverview.errorRate }}%
+              </span>
+            </div>
+            <div class="metric">
+              <span class="metric__label">平均耗时</span>
+              <span class="metric__value">{{ apiOverview.avgDuration }}ms</span>
+            </div>
+          </div>
+          <v-chart class="chart chart-sm" :option="apiTrendOption" autoresize />
+        </div>
+      </el-col>
+      <el-col v-if="mqttTrend.length" :xs="24" :lg="12">
+        <div class="chart-card">
+          <div class="chart-header">
+            <h3>MQTT 消息汇总</h3>
+            <el-link type="primary" underline="never" @click="router.push('/mqtt-stats')">
+              查看详情
+            </el-link>
+          </div>
+          <div class="metric-row">
+            <div class="metric">
+              <span class="metric__label">总消息</span>
+              <span class="metric__value">{{ formatNumber(mqttOverview.total) }}</span>
+            </div>
+            <div class="metric">
+              <span class="metric__label">今日</span>
+              <span class="metric__value">{{ formatNumber(mqttOverview.today) }}</span>
+            </div>
+            <div class="metric">
+              <span class="metric__label">下行</span>
+              <span class="metric__value">{{ formatNumber(mqttOverview.sent) }}</span>
+            </div>
+            <div class="metric">
+              <span class="metric__label">上行</span>
+              <span class="metric__value">{{ formatNumber(mqttOverview.received) }}</span>
+            </div>
+          </div>
+          <v-chart class="chart chart-sm" :option="mqttTrendOption" autoresize />
+        </div>
+      </el-col>
+    </el-row>
+
     <!-- 最新告警 + 最近升级 -->
     <el-row :gutter="16" style="margin-top: 16px">
       <el-col :xs="24" :lg="12">
@@ -99,7 +163,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from '@/utils/element'
 import { VChart } from '@/plugins/echarts'
 import StatCards from '@/components/StatCards.vue'
-import { dashboardApi } from '@/utils/api'
+import { dashboardApi, statsApi, mqttLogApi } from '@/utils/api'
 import { ALERT_LEVEL, OTA_STATUS, dictValue } from '@/constants'
 import { formatNumber } from '@/utils/format'
 
@@ -112,6 +176,11 @@ const trendData = ref([])
 const pieData = ref([])
 const recentAlerts = ref([])
 const recentOTA = ref([])
+// API / MQTT 汇总（需 stats:view 权限；无权限或加载失败时为空，对应卡片自动隐藏）
+const apiOverview = ref({ total: 0, today: 0, errorRate: 0, avgDuration: 0 })
+const apiTrend = ref([])
+const mqttOverview = ref({ total: 0, today: 0, sent: 0, received: 0 })
+const mqttTrend = ref([])
 
 const statItems = computed(() => {
   const s = statData.value
@@ -211,6 +280,126 @@ const pieOption = computed(() => ({
   ],
 }))
 
+/* ------------------------- API 调用汇总（柱状调用量 + 折线错误数） ------------------------- */
+const apiTrendOption = computed(() => ({
+  tooltip: {
+    trigger: 'axis',
+    axisPointer: { type: 'shadow' },
+  },
+  legend: { data: ['调用量', '错误数'], top: 0, textStyle: { fontSize: 12 } },
+  grid: { left: 44, right: 44, top: 36, bottom: 28 },
+  xAxis: {
+    type: 'category',
+    data: apiTrend.value.map((d) => d.date?.slice(5) || ''),
+    axisLine: { lineStyle: { color: '#e0e0e0' } },
+    axisLabel: { color: '#909399', fontSize: 11 },
+  },
+  yAxis: [
+    {
+      type: 'value',
+      name: '调用',
+      nameTextStyle: { color: '#909399', fontSize: 10 },
+      minInterval: 1,
+      axisLine: { show: false },
+      splitLine: { lineStyle: { color: '#f5f5f5' } },
+      axisLabel: { color: '#909399', fontSize: 11 },
+    },
+    {
+      type: 'value',
+      name: '错误',
+      nameTextStyle: { color: '#909399', fontSize: 10 },
+      minInterval: 1,
+      axisLine: { show: false },
+      splitLine: { show: false },
+      axisLabel: { color: '#909399', fontSize: 11 },
+    },
+  ],
+  series: [
+    {
+      name: '调用量',
+      type: 'bar',
+      barWidth: '45%',
+      data: apiTrend.value.map((d) => d.count),
+      itemStyle: { color: '#409eff', borderRadius: [4, 4, 0, 0] },
+    },
+    {
+      name: '错误数',
+      type: 'line',
+      yAxisIndex: 1,
+      smooth: true,
+      showSymbol: true,
+      symbolSize: 6,
+      data: apiTrend.value.map((d) => d.errors),
+      lineStyle: { color: '#f56c6c', width: 2 },
+      itemStyle: { color: '#f56c6c' },
+    },
+  ],
+}))
+
+/* ------------------------- MQTT 消息汇总（堆叠柱状收发 + 折线错误） ------------------------- */
+const mqttTrendOption = computed(() => ({
+  tooltip: {
+    trigger: 'axis',
+    axisPointer: { type: 'shadow' },
+  },
+  legend: { data: ['下行', '上行', '错误'], top: 0, textStyle: { fontSize: 12 } },
+  grid: { left: 44, right: 44, top: 36, bottom: 28 },
+  xAxis: {
+    type: 'category',
+    data: mqttTrend.value.map((d) => d.date?.slice(5) || ''),
+    axisLine: { lineStyle: { color: '#e0e0e0' } },
+    axisLabel: { color: '#909399', fontSize: 11 },
+  },
+  yAxis: [
+    {
+      type: 'value',
+      name: '消息',
+      nameTextStyle: { color: '#909399', fontSize: 10 },
+      minInterval: 1,
+      axisLine: { show: false },
+      splitLine: { lineStyle: { color: '#f5f5f5' } },
+      axisLabel: { color: '#909399', fontSize: 11 },
+    },
+    {
+      type: 'value',
+      name: '错误',
+      nameTextStyle: { color: '#909399', fontSize: 10 },
+      minInterval: 1,
+      axisLine: { show: false },
+      splitLine: { show: false },
+      axisLabel: { color: '#909399', fontSize: 11 },
+    },
+  ],
+  series: [
+    {
+      name: '下行',
+      type: 'bar',
+      stack: 'msg',
+      barWidth: '45%',
+      data: mqttTrend.value.map((d) => d.sent),
+      itemStyle: { color: '#67c23a' },
+    },
+    {
+      name: '上行',
+      type: 'bar',
+      stack: 'msg',
+      data: mqttTrend.value.map((d) => d.received),
+      itemStyle: { color: '#409eff' },
+    },
+    {
+      name: '错误',
+      type: 'line',
+      yAxisIndex: 1,
+      smooth: true,
+      showSymbol: true,
+      symbolSize: 6,
+      data: mqttTrend.value.map((d) => d.errors),
+      lineStyle: { color: '#f56c6c', width: 2 },
+      itemStyle: { color: '#f56c6c' },
+    },
+  ],
+}))
+
 async function loadTrend() {
   try {
     trendData.value = await dashboardApi.getTrend(trendDays.value)
@@ -243,7 +432,45 @@ async function loadAll() {
   loading.value = false
 }
 
-onMounted(loadAll)
+/**
+ * 加载 API / MQTT 汇总数据
+ * 这两组接口要求 stats:view 权限，普通访客无权限时会失败 —— 静默处理：
+ * 加载失败则对应趋势数据为空，仪表盘上对应的汇总卡片自动隐藏，不影响其它模块。
+ */
+async function loadSystemStats() {
+  const results = await Promise.allSettled([
+    statsApi.overview(),
+    statsApi.trend(7),
+    mqttLogApi.overview(),
+    mqttLogApi.trend(7),
+  ])
+  const [ov, tr, mov, mtr] = results
+  if (ov.status === 'fulfilled' && ov.value) {
+    const v = ov.value
+    apiOverview.value = {
+      total: v.total || 0,
+      today: v.today || 0,
+      errorRate: v.errorRate || 0,
+      avgDuration: v.avgDuration || 0,
+    }
+  }
+  if (tr.status === 'fulfilled') apiTrend.value = tr.value || []
+  if (mov.status === 'fulfilled' && mov.value) {
+    const v = mov.value
+    mqttOverview.value = {
+      total: v.total || 0,
+      today: v.today || 0,
+      sent: v.sent || 0,
+      received: v.received || 0,
+    }
+  }
+  if (mtr.status === 'fulfilled') mqttTrend.value = mtr.value || []
+}
+
+onMounted(async () => {
+  await loadAll()
+  loadSystemStats()
+})
 </script>
 
 <style scoped>
@@ -253,5 +480,35 @@ onMounted(loadAll)
 }
 .chart {
   height: 280px;
+}
+.chart-sm {
+  height: 220px;
+}
+.metric-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-bottom: 12px;
+  padding: 10px 0;
+  border-bottom: 1px dashed #ebeef5;
+}
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 64px;
+}
+.metric__label {
+  font-size: 11px;
+  color: #909399;
+}
+.metric__value {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+  line-height: 1.2;
+}
+.metric__value--danger {
+  color: #f56c6c;
 }
 </style>

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import db from '../db/init.js';
 import { authenticate, requirePermission } from '../services/auth.js';
+import { listProperties, validateProperty } from '../services/thing-model.js';
 
 const router = Router();
 
@@ -85,8 +86,71 @@ router.put('/:id', canManage, (req, res) => {
 router.delete('/:id', canManage, (req, res) => {
   const deviceCount = db.prepare('SELECT COUNT(*) as c FROM devices WHERE product_id = ?').get(req.params.id).c;
   if (deviceCount > 0) return res.json({ code: 400, message: '该产品下还有设备，无法删除' });
+  db.prepare('DELETE FROM thing_properties WHERE product_id = ?').run(req.params.id);
   db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
   res.json({ code: 0, message: '删除成功' });
+});
+
+/* ============================ 物模型 ============================ */
+
+// 物模型属性列表（专用路径须在 /:id 之后定义也能匹配，但为清晰起见放在参数路由前——Express 按注册顺序匹配，/:id 会吞掉 /:id/properties 吗？不会，路径段数不同）
+// 物模型属性列表
+router.get('/:id/properties', canView, (req, res) => {
+  const product = db.prepare('SELECT id FROM products WHERE id = ?').get(req.params.id);
+  if (!product) return res.json({ code: 404, message: '产品不存在' });
+  res.json({ code: 0, data: listProperties(product.id) });
+});
+
+// 新增属性
+router.post('/:id/properties', canManage, (req, res) => {
+  const product = db.prepare('SELECT id FROM products WHERE id = ?').get(req.params.id);
+  if (!product) return res.json({ code: 404, message: '产品不存在' });
+  const err = validateProperty(req.body);
+  if (err) return res.json({ code: 400, message: err });
+  const { identifier, name, data_type = 'string', access_mode = 'rw', constraint_min, constraint_max, unit = '', required = 0, sort = 0 } = req.body;
+  const exists = db.prepare('SELECT id FROM thing_properties WHERE product_id = ? AND identifier = ?').get(product.id, identifier);
+  if (exists) return res.json({ code: 400, message: `标识符「${identifier}」已存在` });
+  const result = db.prepare(`
+    INSERT INTO thing_properties (product_id, identifier, name, data_type, access_mode, constraint_min, constraint_max, unit, required, sort)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    product.id, identifier, name, data_type, access_mode,
+    constraint_min === undefined || constraint_min === null || constraint_min === '' ? null : Number(constraint_min),
+    constraint_max === undefined || constraint_max === null || constraint_max === '' ? null : Number(constraint_max),
+    String(unit || '').slice(0, 128), required ? 1 : 0, parseInt(sort) || 0
+  );
+  res.json({ code: 0, data: { id: result.lastInsertRowid }, message: '属性已添加' });
+});
+
+// 修改属性
+router.put('/:id/properties/:propId', canManage, (req, res) => {
+  const product = db.prepare('SELECT id FROM products WHERE id = ?').get(req.params.id);
+  if (!product) return res.json({ code: 404, message: '产品不存在' });
+  const prop = db.prepare('SELECT * FROM thing_properties WHERE id = ? AND product_id = ?').get(req.params.propId, product.id);
+  if (!prop) return res.json({ code: 404, message: '属性不存在' });
+  const merged = { ...prop, ...req.body };
+  const err = validateProperty(merged);
+  if (err) return res.json({ code: 400, message: err });
+  const { identifier, name, data_type, access_mode, constraint_min, constraint_max, unit, required, sort } = merged;
+  db.prepare(`
+    UPDATE thing_properties
+    SET identifier = ?, name = ?, data_type = ?, access_mode = ?, constraint_min = ?, constraint_max = ?, unit = ?, required = ?, sort = ?
+    WHERE id = ?
+  `).run(
+    identifier, name, data_type, access_mode,
+    constraint_min === undefined || constraint_min === null || constraint_min === '' ? null : Number(constraint_min),
+    constraint_max === undefined || constraint_max === null || constraint_max === '' ? null : Number(constraint_max),
+    String(unit || '').slice(0, 128), required ? 1 : 0, parseInt(sort) || 0,
+    req.params.propId
+  );
+  res.json({ code: 0, message: '属性已更新' });
+});
+
+// 删除属性
+router.delete('/:id/properties/:propId', canManage, (req, res) => {
+  const result = db.prepare('DELETE FROM thing_properties WHERE id = ? AND product_id = ?').run(req.params.propId, req.params.id);
+  if (!result.changes) return res.json({ code: 404, message: '属性不存在' });
+  res.json({ code: 0, message: '属性已删除' });
 });
 
 export default router;

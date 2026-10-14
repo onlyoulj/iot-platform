@@ -31,6 +31,12 @@ export const deviceApi = {
   remove: (ids) => request.del(`/devices/${Array.isArray(ids) ? ids.join(',') : ids}`),
   /** 产品下拉选项 */
   getProducts: () => request.get('/devices/meta/products'),
+  /** 电量/信号历史趋势：range = 1h|6h|24h|7d|30d，返回 { points, source, range } */
+  metrics: (id, range = '24h') => request.get(`/devices/${id}/metrics`, { range }),
+  /** 远程控制指令历史 */
+  commands: (id, limit = 50) => request.get(`/devices/${id}/commands`, { limit }),
+  /** 下发远程控制指令：{ command, params } → { cmd_id, delivered, topics } */
+  command: (id, data) => request.post(`/devices/${id}/command`, data),
 }
 
 /* ============================ 固件管理 ============================ */
@@ -66,6 +72,11 @@ export const productApi = {
   create: (data) => request.post('/products', data),
   update: (id, data) => request.put(`/products/${id}`, data),
   remove: (id) => request.del(`/products/${id}`),
+  /** 产品物模型属性列表 */
+  properties: (id) => request.get(`/products/${id}/properties`),
+  createProperty: (id, data) => request.post(`/products/${id}/properties`, data),
+  updateProperty: (id, propId, data) => request.put(`/products/${id}/properties/${propId}`, data),
+  deleteProperty: (id, propId) => request.del(`/products/${id}/properties/${propId}`),
 }
 
 /* ============================ 告警中心 ============================ */
@@ -76,6 +87,41 @@ export const alertApi = {
   readAll: () => request.post('/alerts/read-all'),
   clear: () => request.del('/alerts/clear'),
   remove: (id) => request.del(`/alerts/${id}`),
+  /** 告警规则列表 */
+  rules: () => request.get('/alerts/rules'),
+  createRule: (data) => request.post('/alerts/rules', data),
+  updateRule: (id, data) => request.put(`/alerts/rules/${id}`, data),
+  deleteRule: (id) => request.del(`/alerts/rules/${id}`),
+  /** 测试规则：手动触发评估，返回生成告警数 */
+  testRule: (id) => request.post(`/alerts/rules/${id}/test`),
+  /** 通知渠道列表 */
+  channels: () => request.get('/alerts/channels'),
+  /** 渠道类型字典 */
+  channelTypes: () => request.get('/alerts/channels/types'),
+  createChannel: (data) => request.post('/alerts/channels', data),
+  updateChannel: (id, data) => request.put(`/alerts/channels/${id}`, data),
+  deleteChannel: (id) => request.del(`/alerts/channels/${id}`),
+  /** 测试渠道：发送测试消息验证配置 */
+  testChannel: (id) => request.post(`/alerts/channels/${id}/test`),
+}
+
+/* ============================ 设备影子 ============================ */
+export const shadowApi = {
+  /** 影子详情：{desired, reported, desired_version, reported_version, ...} */
+  get: (deviceId) => request.get(`/devices/${deviceId}/shadow`),
+  /** 写入期望态（经物模型校验后 MQTT 下发 shadow_set） */
+  setDesired: (deviceId, desired) => request.put(`/devices/${deviceId}/shadow/desired`, { desired }),
+  /** 手动补录上报态（调试） */
+  report: (deviceId, reported) => request.post(`/devices/${deviceId}/shadow/reported`, { reported }),
+  /** 自定义属性历史趋势：{identifier, points, bucket, name, unit} */
+  propsHistory: (deviceId, identifier, range = '24h') =>
+    request.get(`/devices/${deviceId}/props-history`, { identifier, range }),
+}
+
+/* ============================ 设备生命周期 ============================ */
+export const timelineApi = {
+  /** 聚合时间轴：告警/指令/升级/MQTT/影子/激活 */
+  get: (deviceId, limit = 100) => request.get(`/devices/${deviceId}/timeline`, { limit }),
 }
 
 /* ============================ 认证 ============================ */

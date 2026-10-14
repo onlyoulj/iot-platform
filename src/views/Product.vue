@@ -19,6 +19,9 @@
               <el-icon class="product-more"><MoreFilled /></el-icon>
               <template #dropdown>
                 <el-dropdown-menu>
+                  <el-dropdown-item command="model">
+                    <el-icon><SetUp /></el-icon> 物模型
+                  </el-dropdown-item>
                   <el-dropdown-item command="edit">
                     <el-icon><Edit /></el-icon> 编辑
                   </el-dropdown-item>
@@ -104,6 +107,104 @@
         <el-button @click="showDialog = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="handleSubmit">确认</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 物模型管理 -->
+    <el-dialog v-model="showModelDialog" :title="`物模型 · ${modelProduct?.name || ''}`" width="760px" destroy-on-close>
+      <div v-loading="modelLoading">
+        <div class="model-toolbar">
+          <span class="model-tip">定义产品属性，设备影子与远程控制将按此校验</span>
+          <el-button type="primary" size="small" @click="openPropDialog()">
+            <el-icon><Plus /></el-icon> 添加属性
+          </el-button>
+        </div>
+        <el-table :data="modelProps" size="small" stripe style="width: 100%" empty-text="暂未定义属性">
+          <el-table-column prop="identifier" label="标识符" min-width="110">
+            <template #default="{ row }"><span class="mono">{{ row.identifier }}</span></template>
+          </el-table-column>
+          <el-table-column prop="name" label="名称" min-width="90" />
+          <el-table-column label="类型" width="70">
+            <template #default="{ row }">
+              <el-tag size="small" effect="plain" type="info">{{ row.data_type }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="读写" width="60">
+            <template #default="{ row }">
+              {{ { r: '只读', w: '只写', rw: '读写' }[row.access_mode] || row.access_mode }}
+            </template>
+          </el-table-column>
+          <el-table-column label="约束" min-width="110">
+            <template #default="{ row }">
+              <span v-if="row.data_type === 'enum'" class="mono">{{ row.unit || '--' }}</span>
+              <span v-else-if="row.constraint_min !== null && row.constraint_max !== null" class="mono">
+                [{{ row.constraint_min }}, {{ row.constraint_max }}]{{ row.data_type === 'string' ? '' : '' }}
+              </span>
+              <span v-else>--</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="单位" width="70">
+            <template #default="{ row }">
+              <span v-if="row.data_type === 'enum'">--</span>
+              <span v-else>{{ row.unit || '--' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="110" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="openPropDialog(row)">编辑</el-button>
+              <el-button link type="danger" size="small" @click="deleteProp(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <!-- 属性编辑 -->
+      <el-dialog
+        v-model="showPropDialog"
+        :title="propForm.id ? '编辑属性' : '添加属性'"
+        width="480px"
+        append-to-body
+        destroy-on-close
+      >
+        <el-form ref="propFormRef" :model="propForm" :rules="propRules" label-width="90px">
+          <el-form-item label="标识符" prop="identifier">
+            <el-input v-model="propForm.identifier" placeholder="如 temperature，字母开头" :disabled="!!propForm.id" />
+          </el-form-item>
+          <el-form-item label="名称" prop="name">
+            <el-input v-model="propForm.name" placeholder="如 温度" />
+          </el-form-item>
+          <el-form-item label="数据类型" prop="data_type">
+            <el-select v-model="propForm.data_type" style="width: 100%">
+              <el-option v-for="t in ['int', 'float', 'bool', 'string', 'enum']" :key="t" :label="t" :value="t" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="读写模式">
+            <el-radio-group v-model="propForm.access_mode">
+              <el-radio value="r">只读</el-radio>
+              <el-radio value="w">只写</el-radio>
+              <el-radio value="rw">读写</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="propForm.data_type === 'int' || propForm.data_type === 'float'" label="数值范围">
+            <el-col :span="11">
+              <el-input v-model="propForm.constraint_min" type="number" placeholder="最小值" />
+            </el-col>
+            <el-col :span="2" style="text-align: center">-</el-col>
+            <el-col :span="11">
+              <el-input v-model="propForm.constraint_max" type="number" placeholder="最大值" />
+            </el-col>
+          </el-form-item>
+          <el-form-item :label="propForm.data_type === 'enum' ? '可选值' : '单位'">
+            <el-input
+              v-model="propForm.unit"
+              :placeholder="propForm.data_type === 'enum' ? '逗号分隔，如 low,mid,high' : '如 °C / % / dBm（选填）'"
+            />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="showPropDialog = false">取消</el-button>
+          <el-button type="primary" :loading="propSaving" @click="saveProp">保存</el-button>
+        </template>
+      </el-dialog>
     </el-dialog>
   </div>
 </template>
@@ -207,8 +308,109 @@ async function handleDelete(product) {
 }
 
 function handleCommand(command, product) {
-  if (command === 'edit') openEdit(product)
+  if (command === 'model') openModelDialog(product)
+  else if (command === 'edit') openEdit(product)
   else if (command === 'delete') handleDelete(product)
+}
+
+/* ------------------------- 物模型管理 ------------------------- */
+const showModelDialog = ref(false)
+const modelProduct = ref(null)
+const modelProps = ref([])
+const modelLoading = ref(false)
+
+async function openModelDialog(product) {
+  modelProduct.value = product
+  showModelDialog.value = true
+  await loadModelProps(product.id)
+}
+
+async function loadModelProps(productId) {
+  modelLoading.value = true
+  try {
+    modelProps.value = await productApi.properties(productId)
+  } catch (err) {
+    ElMessage.error(err.message || '物模型加载失败')
+  } finally {
+    modelLoading.value = false
+  }
+}
+
+const showPropDialog = ref(false)
+const propSaving = ref(false)
+const propFormRef = ref()
+const defaultPropForm = () => ({
+  id: null,
+  identifier: '',
+  name: '',
+  data_type: 'int',
+  access_mode: 'rw',
+  constraint_min: '',
+  constraint_max: '',
+  unit: '',
+})
+const propForm = ref(defaultPropForm())
+const propRules = {
+  identifier: [
+    { required: true, message: '请输入标识符', trigger: 'blur' },
+    { pattern: /^[a-zA-Z][a-zA-Z0-9_]{0,63}$/, message: '字母开头，可含数字下划线', trigger: 'blur' },
+  ],
+  name: [{ required: true, message: '请输入属性名称', trigger: 'blur' }],
+  data_type: [{ required: true, message: '请选择数据类型', trigger: 'change' }],
+}
+
+function openPropDialog(row) {
+  if (row) {
+    propForm.value = {
+      id: row.id,
+      identifier: row.identifier,
+      name: row.name,
+      data_type: row.data_type,
+      access_mode: row.access_mode,
+      constraint_min: row.constraint_min ?? '',
+      constraint_max: row.constraint_max ?? '',
+      unit: row.unit || '',
+    }
+  } else {
+    propForm.value = defaultPropForm()
+  }
+  showPropDialog.value = true
+}
+
+async function saveProp() {
+  const valid = await propFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+  propSaving.value = true
+  try {
+    const payload = { ...propForm.value }
+    if (payload.constraint_min === '') delete payload.constraint_min
+    if (payload.constraint_max === '') delete payload.constraint_max
+    if (propForm.value.id) {
+      await productApi.updateProperty(modelProduct.value.id, propForm.value.id, payload)
+      ElMessage.success('属性已更新')
+    } else {
+      await productApi.createProperty(modelProduct.value.id, payload)
+      ElMessage.success('属性已添加')
+    }
+    showPropDialog.value = false
+    await loadModelProps(modelProduct.value.id)
+  } catch (err) {
+    ElMessage.error(err.message || '保存失败')
+  } finally {
+    propSaving.value = false
+  }
+}
+
+async function deleteProp(row) {
+  const ok = await confirm(`确认删除属性「${row.name}」？`, '删除确认')
+  if (!ok) return
+  try {
+    await productApi.deleteProperty(modelProduct.value.id, row.id)
+    ElMessage.success('已删除')
+    await loadModelProps(modelProduct.value.id)
+  } catch (err) {
+    ElMessage.error(err.message || '删除失败')
+  }
 }
 
 onMounted(loadProducts)
@@ -303,5 +505,19 @@ onMounted(loadProducts)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.model-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.model-tip {
+  font-size: 12px;
+  color: #909399;
+}
+.mono {
+  font-family: Consolas, Monaco, monospace;
+  font-size: 12px;
 }
 </style>

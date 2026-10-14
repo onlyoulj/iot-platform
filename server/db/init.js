@@ -70,10 +70,22 @@ db.exec(`
     longitude REAL DEFAULT NULL,
     latitude REAL DEFAULT NULL,
     info_updated_at DATETIME DEFAULT NULL,
+    group_id INTEGER DEFAULT NULL,
     last_online DATETIME,
     active_time DATETIME,
     created_at DATETIME DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (product_id) REFERENCES products(id)
+  );
+
+  /* ---------------- 设备分组（自引用树，parent_id → device_groups.id） ---------------- */
+
+  CREATE TABLE IF NOT EXISTS device_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    parent_id INTEGER DEFAULT NULL,
+    description TEXT DEFAULT '',
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (parent_id) REFERENCES device_groups(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS device_props (
@@ -84,6 +96,35 @@ db.exec(`
     updated_at DATETIME DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
   );
+
+  /* ---------------- 设备指标历史（电量/信号趋势） ---------------- */
+
+  CREATE TABLE IF NOT EXISTS device_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL,
+    battery INTEGER DEFAULT NULL,
+    signal INTEGER DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_dm_device_time ON device_metrics(device_id, created_at);
+
+  /* ---------------- 设备远程控制指令日志 ---------------- */
+
+  CREATE TABLE IF NOT EXISTS device_control_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL,
+    cmd_id TEXT NOT NULL,
+    command TEXT NOT NULL,
+    params TEXT DEFAULT '',
+    status TEXT DEFAULT 'sent',
+    result TEXT DEFAULT '',
+    operator TEXT DEFAULT '',
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    acked_at DATETIME,
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_dcl_device ON device_control_logs(device_id, created_at);
 
   CREATE TABLE IF NOT EXISTS ota_tasks (
     id TEXT PRIMARY KEY,
@@ -125,6 +166,77 @@ db.exec(`
     read INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT (datetime('now','localtime'))
   );
+
+  /* ---------------- 告警规则引擎 ---------------- */
+
+  CREATE TABLE IF NOT EXISTS alert_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    enabled INTEGER DEFAULT 1,
+    metric TEXT NOT NULL,
+    operator TEXT NOT NULL,
+    threshold REAL,
+    level TEXT DEFAULT 'major',
+    product_name TEXT DEFAULT '',
+    cooldown INTEGER DEFAULT 300,
+    message TEXT DEFAULT '',
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
+  );
+
+  /* ---------------- 告警通知渠道 ---------------- */
+
+  CREATE TABLE IF NOT EXISTS alert_channels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    config TEXT DEFAULT '{}',
+    enabled INTEGER DEFAULT 1,
+    levels TEXT DEFAULT '',
+    created_at DATETIME DEFAULT (datetime('now','localtime'))
+  );
+
+  /* ---------------- 物模型 / 设备影子 ---------------- */
+
+  CREATE TABLE IF NOT EXISTS thing_properties (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    identifier TEXT NOT NULL,
+    name TEXT NOT NULL,
+    data_type TEXT NOT NULL DEFAULT 'string',
+    access_mode TEXT NOT NULL DEFAULT 'rw',
+    constraint_min REAL,
+    constraint_max REAL,
+    unit TEXT DEFAULT '',
+    required INTEGER DEFAULT 0,
+    sort INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    UNIQUE (product_id, identifier),
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS device_shadows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL,
+    desired TEXT DEFAULT '{}',
+    reported TEXT DEFAULT '{}',
+    desired_version INTEGER DEFAULT 0,
+    reported_version INTEGER DEFAULT 0,
+    desired_updated_at DATETIME,
+    reported_updated_at DATETIME,
+    updated_at DATETIME DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_shadow_device ON device_shadows(device_id);
+
+  CREATE TABLE IF NOT EXISTS device_prop_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id INTEGER NOT NULL,
+    identifier TEXT NOT NULL,
+    value TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_dph_dev_prop ON device_prop_history(device_id, identifier, created_at);
 
   CREATE TABLE IF NOT EXISTS device_upgrade_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -225,6 +337,7 @@ function migrateDeviceColumns() {
     ['longitude', "REAL DEFAULT NULL"],
     ['latitude', "REAL DEFAULT NULL"],
     ['info_updated_at', "DATETIME DEFAULT NULL"],
+    ['group_id', "INTEGER DEFAULT NULL"],
   ];
   for (const [name, def] of columns) {
     if (existing.has(name)) continue;
@@ -248,6 +361,44 @@ function migrateJobColumns() {
   }
 }
 migrateJobColumns();
+
+/**
+ * alerts 表迁移：新增 rule_id 列（关联告警规则引擎，可空，兼容人工告警）
+ * 用于冷却判断：同设备同规则 N 秒内不重复生成告警。
+ */
+function migrateAlertColumns() {
+  const existing = new Set(
+    db.prepare('PRAGMA table_info(alerts)').all().map((c) => c.name)
+  );
+  if (!existing.has('rule_id')) {
+    db.exec('ALTER TABLE alerts ADD COLUMN rule_id INTEGER DEFAULT NULL');
+    console.log('[db] alerts 表新增字段: rule_id');
+  }
+  if (!existing.has('rule_eval_at')) {
+    db.exec("ALTER TABLE alerts ADD COLUMN rule_eval_at DATETIME DEFAULT NULL");
+    console.log('[db] alerts 表新增字段: rule_eval_at');
+  }
+}
+migrateAlertColumns();
+
+/**
+ * 告警规则种子补齐（幂等）：alert_rules 表为空时插入 3 条默认规则。
+ * 与设备/固件种子不同，规则表新建即空，老库升级也应补齐，因此独立执行。
+ */
+const ruleCount = db.prepare('SELECT COUNT(*) as c FROM alert_rules').get().c;
+if (ruleCount === 0) {
+  const insertRule = db.prepare(`
+    INSERT INTO alert_rules (name, enabled, metric, operator, threshold, level, product_name, cooldown, message)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const seedRules = [
+    ['电量过低', 1, 'battery', 'lt', 20, 'major', '', 3600, '设备 {device} 电量过低：{value}%（阈值 {threshold}%）'],
+    ['信号微弱', 1, 'signal', 'lt', -90, 'minor', '', 1800, '设备 {device} 信号较弱：{value} dBm（阈值 {threshold} dBm）'],
+    ['设备离线超时', 1, 'offline', 'gte', 600, 'critical', '', 1800, '设备 {device} 已离线 {value} 秒（阈值 {threshold} 秒）'],
+  ];
+  for (const r of seedRules) insertRule.run(...r);
+  console.log('[db] 告警规则种子已补齐（3 条默认规则）');
+}
 
 // 种子数据
 const productCount = db.prepare('SELECT COUNT(*) as c FROM products').get().c;
@@ -378,6 +529,37 @@ if (productCount === 0) {
   ];
   for (const a of alertData) insertAlert.run(...a);
 
+  // 设备指标历史种子（电量/信号趋势）：前 6 台设备生成过去 24h、每 30 分钟一条的模拟曲线
+  const insertMetric = db.prepare(`
+    INSERT INTO device_metrics (device_id, battery, signal, created_at) VALUES (?, ?, ?, ?)
+  `);
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmt = (d) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  // 各设备曲线参数：起始电量 / 电量日消耗 / 基准信号 / 信号波动幅度
+  const metricProfiles = [
+    { id: 1, battery0: 92, drain: 6, signal0: -48, swing: 10 },
+    { id: 2, battery0: 78, drain: 8, signal0: -58, swing: 14 },
+    { id: 3, battery0: 15, drain: 4, signal0: -80, swing: 16 },
+    { id: 4, battery0: 88, drain: 5, signal0: -62, swing: 12 },
+    { id: 5, battery0: 95, drain: 3, signal0: -40, swing: 8 },
+    { id: 6, battery0: 60, drain: 10, signal0: -70, swing: 18 },
+  ];
+  const now = new Date();
+  for (const p of metricProfiles) {
+    for (let i = 48; i >= 0; i--) {
+      const at = new Date(now.getTime() - i * 30 * 60 * 1000);
+      const phase = (48 - i) / 48;
+      const wobble = Math.sin((48 - i) * 1.7) * p.swing;
+      insertMetric.run(
+        p.id,
+        Math.max(1, Math.round(p.battery0 - p.drain * phase + Math.sin((48 - i) * 0.9) * 1.5)),
+        Math.round(p.signal0 + wobble),
+        fmt(at)
+      );
+    }
+  }
+
   console.log('✅ 种子数据初始化完成');
 }
 
@@ -420,6 +602,32 @@ for (const fw of firmwares) {
 
 import db from './index-core.js';
 import { seedGroups, seedUsers, migratePermissions } from './auth-schema.js';
+
+/**
+ * 设备分组种子补齐（幂等）：device_groups 为空时插入两层示例分组树，
+ * 并按 DeviceName 给种子设备归组（老库设备名不匹配则跳过）。
+ * 放在设备种子之后执行，保证新库设备已存在。
+ */
+const deviceGroupCount = db.prepare('SELECT COUNT(*) as c FROM device_groups').get().c;
+if (deviceGroupCount === 0) {
+  const insertGroup = db.prepare(
+    'INSERT INTO device_groups (name, parent_id, description) VALUES (?, ?, ?)'
+  );
+  const huadong = insertGroup.run('华东大区', null, '上海 / 苏州 / 杭州 等地设备').lastInsertRowid;
+  const huanan = insertGroup.run('华南大区', null, '深圳 / 广州 等地设备').lastInsertRowid;
+  const lab = insertGroup.run('实验室', null, '研发联调设备').lastInsertRowid;
+  insertGroup.run('上海站点', huadong, '');
+  insertGroup.run('苏州站点', huadong, '');
+  const gray = insertGroup.run('灰度验证组', lab, 'OTA 新固件首批验证设备').lastInsertRowid;
+
+  const assignGroup = db.prepare('UPDATE devices SET group_id = ? WHERE device_name = ?');
+  assignGroup.run(huadong, 'GW-10001');
+  assignGroup.run(huadong, 'GW-10002');
+  assignGroup.run(huadong, 'SN-8801');
+  assignGroup.run(huanan, 'GW-10018');
+  assignGroup.run(gray, 'SF-3303');
+  console.log('[db] 设备分组种子已补齐（3 个大区 + 灰度验证组）');
+}
 
 /* ---------------- 用户 / 用户组 种子数据（幂等） ---------------- */
 const groupIds = seedGroups();
