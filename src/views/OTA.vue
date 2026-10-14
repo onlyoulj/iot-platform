@@ -183,6 +183,20 @@
             </el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item v-if="createForm.scope === '灰度组'" label="目标分组" required>
+          <el-tree-select
+            v-model="createForm.group_id"
+            :data="groupSelectData"
+            node-key="value"
+            check-strictly
+            default-expand-all
+            placeholder="选择分组（含其子分组）"
+            style="width: 100%"
+          />
+          <div v-if="grayGroupCount !== null" class="gray-count-tip">
+            该分组子树共 {{ grayGroupCount }} 台设备，创建时将按目标产品「{{ createForm.product_name || '未选择' }}」再次过滤
+          </div>
+        </el-form-item>
         <el-form-item label="升级策略">
           <el-radio-group v-model="createForm.strategy">
             <el-radio v-for="opt in OTA_STRATEGY_OPTIONS" :key="opt.value" :value="opt.value">
@@ -325,7 +339,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from '@/utils/element'
 import PageHeader from '@/components/PageHeader.vue'
-import { otaApi, productApi, firmwareApi } from '@/utils/api'
+import { otaApi, productApi, firmwareApi, deviceGroupApi } from '@/utils/api'
 import { confirm } from '@/utils/dialog'
 import { usePagination } from '@/composables/usePagination'
 import {
@@ -380,6 +394,7 @@ const defaultCreateForm = () => ({
   product_name: '',
   firmware_id: null,
   scope: '全部设备',
+  group_id: null,
   strategy: 'immediate',
   scheduled_at: null,
   total: 0,
@@ -402,6 +417,43 @@ async function loadProducts() {
     ElMessage.error(err.message || '产品列表加载失败')
   }
 }
+
+/* ------------------------- 灰度组选择 ------------------------- */
+const groupTree = ref([])
+
+async function loadGroups() {
+  try {
+    groupTree.value = await deviceGroupApi.tree()
+  } catch {
+    groupTree.value = []
+  }
+}
+
+const groupSelectData = computed(() => groupTree.value.map(mapGroup))
+
+function mapGroup(g) {
+  return {
+    value: g.id,
+    label: g.device_count ? `${g.name} (${g.device_count})` : g.name,
+    children: (g.children || []).map(mapGroup),
+  }
+}
+
+/** 选中分组子树的总设备数（含子孙分组） */
+const grayGroupCount = computed(() => {
+  const id = createForm.value.group_id
+  if (!id) return null
+  const find = (list) => {
+    for (const g of list) {
+      if (g.id === id) return g
+      const hit = find(g.children || [])
+      if (hit) return hit
+    }
+  }
+  const sum = (g) => (g.device_count || 0) + (g.children || []).reduce((acc, c) => acc + sum(c), 0)
+  const src = find(groupTree.value)
+  return src ? sum(src) : null
+})
 
 async function loadFirmwareOptions() {
   firmwareLoading.value = true
@@ -441,6 +493,11 @@ async function handleCreate() {
 
   submitting.value = true
   try {
+    if (createForm.value.scope === '灰度组' && !createForm.value.group_id) {
+      ElMessage.warning('灰度组发布必须选择目标分组')
+      submitting.value = false
+      return
+    }
     const fw = firmwareOptions.value.find((f) => f.id === createForm.value.firmware_id)
     await otaApi.create({
       name: createForm.value.name,
@@ -448,6 +505,7 @@ async function handleCreate() {
       firmware_version: fw ? `v${fw.version}` : '',
       product_name: createForm.value.product_name,
       scope: createForm.value.scope,
+      group_id: createForm.value.group_id,
       strategy: createForm.value.strategy,
       scheduled_at: createForm.value.scheduled_at,
       total: createForm.value.total,
@@ -562,7 +620,7 @@ function handleReset() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadProducts(), loadFirmwareOptions()])
+  await Promise.all([loadProducts(), loadFirmwareOptions(), loadGroups()])
 
   // 从固件页「推送」跳转过来时，自动预填并打开创建对话框
   if (route.query.create === '1') {
@@ -609,5 +667,11 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+}
+.gray-count-tip {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
 }
 </style>

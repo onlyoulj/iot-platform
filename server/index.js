@@ -9,6 +9,7 @@ import './services/config-store.js';
 
 import dashboardRoutes from './routes/dashboard.js';
 import deviceRoutes from './routes/devices.js';
+import deviceGroupRoutes from './routes/device-groups.js';
 import firmwareRoutes from './routes/firmware.js';
 import otaRoutes from './routes/ota.js';
 import productRoutes from './routes/product.js';
@@ -63,6 +64,7 @@ app.use('/api/users', userRoutes);         // 用户管理（内部统一鉴权 
 app.use('/api/groups', groupRoutes);       // 用户组与权限（内部统一鉴权 + 权限校验）
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/devices', deviceRoutes);
+app.use('/api/device-groups', deviceGroupRoutes); // 设备分组树（device:view 读 / device:edit 写）
 app.use('/api/firmware', firmwareRoutes);
 app.use('/api/ota', otaRoutes);
 app.use('/api/products', productRoutes);

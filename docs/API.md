@@ -86,8 +86,9 @@
 | GET | `/stats` | 按状态统计，需 `device:view` |
 | GET | `/:id` | 详情（含实时属性），需 `device:view` |
 | POST | `/` | 新增，需 `device:edit` |
-| PUT | `/:id` | 修改名称 / 位置 / 固件版本，需 `device:edit` |
+| PUT | `/:id` | 修改名称 / 位置 / 固件版本 / 分组，需 `device:edit` |
 | DELETE | `/:id` | 删除，`id` 支持逗号分隔批量，需 `device:delete` |
+| POST | `/batch-group` | 批量移动设备到分组，需 `device:edit` |
 | GET | `/meta/products` | 产品下拉选项，需 `device:view` |
 
 **GET `/` 查询参数**
@@ -97,6 +98,7 @@
 | `search` | string | 模糊匹配 `name` / `device_name` |
 | `product` | string | 按 `product_name` 精确匹配 |
 | `status` | string | `online` / `offline` / `inactive` |
+| `group_id` | number | 按分组筛选：命中分组自身 + 全部子孙分组；`0` 表示未分组 |
 | `page` | number | 默认 1 |
 | `pageSize` | number | 默认 20 |
 
@@ -115,6 +117,8 @@
 | `status` | string | `online` / `offline` / `inactive` |
 | `ip` / `mac` | string | 网络信息，未接入时为 `--` |
 | `location` | string | 部署位置 |
+| `group_id` | number | 所属分组 ID，未分组为 `null` |
+| `group_name` | string | 所属分组名称（列表 / 详情 / 修改返回时附带） |
 | `last_online` | datetime | 最后上线时间，可能为 `null` |
 | `created_at` | datetime | 创建时间 |
 | `props` | array | 实时属性 `[{ name, value, updated }]` |
@@ -138,7 +142,30 @@
 }
 ```
 
-`name` / `device_name` / `product_name` 必填；`device_name` 重复返回 `400`。新建设备初始状态为 `inactive`。
+`name` / `device_name` / `product_name` 必填；`device_name` 重复返回 `400`。新建设备初始状态为 `inactive`。可选 `group_id` 直接归组。
+
+**POST `/batch-group` 请求体**（批量移动分组）
+
+```json
+{ "ids": [1, 2, 3], "group_id": 5 }
+```
+
+`group_id` 传 `null` 表示移出分组（置为未分组）。
+
+---
+
+## 2.1 设备分组 `/api/device-groups`
+
+**鉴权**：读要求 `device:view`，写要求 `device:edit`。分组为自引用树（`parent_id` 指向父分组，顶层为 `null`），删除分组时其子分组与组内设备自动上移到父分组（父为空则未分组）。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/` | 分组树，每组含直属设备数 `device_count` |
+| POST | `/` | 新增 `{ name, parent_id?, description? }` |
+| PUT | `/:id` | 修改 `{ name?, parent_id?, description? }`；`parent_id` 不可指向自身或其子分组（防环） |
+| DELETE | `/:id` | 删除（子分组与设备上移） |
+
+**GET `/` → `data`**：树形数组，节点 `{ id, name, parent_id, description, device_count, children: [] }`。
 
 ---
 
@@ -244,7 +271,12 @@
 ```
 
 `name` 与 `product_name` 必填。`total` 由服务端按实际目标设备数写入（前端传值被忽略）。
-可选 `device_names`（SN 数组）用于 `指定设备` / `灰度组` 范围；不传则取该产品全部设备。
+
+目标设备解析规则（优先级从高到低）：
+
+1. `scope: "灰度组"` + `group_id`：该分组**子树**（含全部子孙分组）内属于目标产品的设备，`scope` 落库为 `灰度组：{分组名}`；缺 `group_id` 或分组下无该产品设备返回 `400`
+2. `device_names`（SN 数组）：按 SN 精确匹配，用于 `指定设备`
+3. 都不传：该产品下全部设备
 
 > **创建即下发**：`strategy=immediate` 时任务状态直接置 `running`，并为每台目标设备生成
 > `device_upgrade_jobs`（初始 `pending`），随后向**在线且有 SSE 长连接**的设备主动推送 `upgrade` 事件；

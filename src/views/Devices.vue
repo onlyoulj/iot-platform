@@ -2,6 +2,41 @@
   <div class="page-container">
     <StatCards :items="statItems" />
 
+    <div class="device-layout">
+      <!-- 分组树侧栏 -->
+      <div class="group-panel">
+        <div class="group-panel__header">
+          <h4>设备分组</h4>
+          <el-button v-if="canEdit" link type="primary" size="small" @click="openGroupDialog(null)">
+            <el-icon><Plus /></el-icon> 新建
+          </el-button>
+        </div>
+        <el-tree
+          ref="groupTreeRef"
+          :data="groupTreeData"
+          node-key="key"
+          highlight-current
+          default-expand-all
+          :expand-on-click-node="false"
+          @node-click="onGroupNodeClick"
+        >
+          <template #default="{ data }">
+            <div class="group-node">
+              <span class="group-node__label">
+                <el-icon v-if="data.id"><Folder /></el-icon>
+                {{ data.label }}
+              </span>
+              <span v-if="data.id && canEdit" class="group-node__actions" @click.stop>
+                <el-icon class="group-node__act" @click="openGroupDialog(data)"><Edit /></el-icon>
+                <el-icon class="group-node__act group-node__act--danger" @click="handleGroupDelete(data)"><Delete /></el-icon>
+              </span>
+            </div>
+          </template>
+        </el-tree>
+      </div>
+
+      <!-- 右侧：筛选 + 列表 -->
+      <div class="device-main">
     <!-- 筛选 -->
     <div class="filter-bar">
       <el-input
@@ -30,6 +65,9 @@
       <el-button @click="handleReset">
         <el-icon><Refresh /></el-icon> 重置
       </el-button>
+      <el-tag v-if="activeGroup" closable @close="clearGroupFilter">
+        分组：{{ activeGroup.name }}
+      </el-tag>
     </div>
 
     <!-- 列表 -->
@@ -37,6 +75,14 @@
       <div class="table-toolbar">
         <h3>设备列表</h3>
         <div>
+          <el-button
+            type="primary"
+            plain
+            :disabled="!selectedRows.length"
+            @click="openBatchGroupDialog"
+          >
+            <el-icon><Folder /></el-icon> 移动分组
+          </el-button>
           <el-button
             type="danger"
             plain
@@ -75,6 +121,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="product_name" label="所属产品" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="group_name" label="分组" width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.group_name || '未分组' }}</template>
+        </el-table-column>
         <el-table-column prop="firmware_version" label="当前固件" width="120">
           <template #default="{ row }">
             <el-tag type="info" size="small" effect="plain">
@@ -151,6 +200,9 @@
       </div>
     </div>
 
+    </div><!-- /device-main -->
+    </div><!-- /device-layout -->
+
     <!-- 添加 / 编辑设备 -->
     <el-dialog
       v-model="showDialog"
@@ -178,6 +230,18 @@
         <el-form-item label="固件版本">
           <el-input v-model="form.firmware_version" placeholder="如 v2.1.0" />
         </el-form-item>
+        <el-form-item label="所属分组">
+          <el-tree-select
+            v-model="form.group_id"
+            :data="groupTreeSelectData"
+            node-key="id"
+            check-strictly
+            clearable
+            default-expand-all
+            placeholder="不选则归入未分组"
+            style="width: 100%"
+          />
+        </el-form-item>
         <el-form-item label="位置">
           <el-input v-model="form.location" placeholder="如 上海·浦东" />
         </el-form-item>
@@ -187,6 +251,58 @@
         <el-button type="primary" :loading="submitting" @click="handleSubmit">
           {{ dialogMode === 'edit' ? '保存修改' : '确认添加' }}
         </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 分组管理（新建 / 编辑） -->
+    <el-dialog
+      v-model="showGroupDialog"
+      :title="groupForm.id ? '编辑分组' : '新建分组'"
+      width="440px"
+      destroy-on-close
+    >
+      <el-form :model="groupForm" label-width="90px">
+        <el-form-item label="分组名称" required>
+          <el-input v-model="groupForm.name" placeholder="如：华东大区 / 灰度验证组" />
+        </el-form-item>
+        <el-form-item label="父分组">
+          <el-tree-select
+            v-model="groupForm.parent_id"
+            :data="groupParentOptions"
+            node-key="id"
+            check-strictly
+            clearable
+            default-expand-all
+            placeholder="不选则为顶级分组"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="groupForm.description" type="textarea" :rows="2" placeholder="分组用途说明" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showGroupDialog = false">取消</el-button>
+        <el-button type="primary" :loading="groupSubmitting" @click="handleGroupSubmit">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量移动分组 -->
+    <el-dialog v-model="showBatchGroupDialog" title="批量移动分组" width="440px" destroy-on-close>
+      <p class="batch-group-tip">将选中的 {{ selectedRows.length }} 台设备移动到：</p>
+      <el-tree-select
+        v-model="batchGroupId"
+        :data="groupTreeSelectData"
+        node-key="id"
+        check-strictly
+        clearable
+        default-expand-all
+        placeholder="不选则移出所有分组"
+        style="width: 100%"
+      />
+      <template #footer>
+        <el-button @click="showBatchGroupDialog = false">取消</el-button>
+        <el-button type="primary" :loading="batchGroupSubmitting" @click="handleBatchGroup">确认移动</el-button>
       </template>
     </el-dialog>
 
@@ -607,7 +723,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage } from '@/utils/element'
 import StatCards from '@/components/StatCards.vue'
 import VChart from '@/plugins/echarts'
-import { deviceApi, subscribeApi, shadowApi, productApi, timelineApi } from '@/utils/api'
+import { deviceApi, deviceGroupApi, subscribeApi, shadowApi, productApi, timelineApi } from '@/utils/api'
 import { confirm } from '@/utils/dialog'
 import { copyText } from '@/utils/clipboard'
 import { usePagination } from '@/composables/usePagination'
@@ -650,6 +766,7 @@ function signalLevel(dbm) {
 const keyword = ref('')
 const filterProduct = ref('')
 const filterStatus = ref('')
+const filterGroupId = ref('') // ''=全部 | '0'=未分组 | 分组id
 
 const {
   list: devices,
@@ -670,9 +787,204 @@ const {
       search: keyword.value.trim() || undefined,
       product: filterProduct.value || undefined,
       status: filterStatus.value || undefined,
+      group_id: filterGroupId.value || undefined,
     }),
   { pageSize: 10 }
 )
+
+/* ------------------------- 设备分组树 ------------------------- */
+const groupTreeRef = ref(null)
+const groupTree = ref([])
+/** 分组管理/移动需要 device:edit 权限 */
+const canEdit = computed(() => hasPermission('device:edit'))
+/** 侧栏树数据：虚拟根「全部设备」+「未分组」+ 后端分组树 */
+const groupTreeData = computed(() => [
+  { key: 'all', id: null, label: '全部设备' },
+  { key: 'none', id: 0, label: '未分组' },
+  ...groupTree.value.map((g) => ({
+    key: `g-${g.id}`,
+    id: g.id,
+    label: g.name,
+    device_count: g.device_count,
+    children: g.children?.length ? g.children.map(mapGroupNode) : undefined,
+  })),
+])
+function mapGroupNode(g) {
+  return {
+    key: `g-${g.id}`,
+    id: g.id,
+    label: g.name,
+    device_count: g.device_count,
+    children: g.children?.length ? g.children.map(mapGroupNode) : undefined,
+  }
+}
+/** 表单 / 批量移动用的树选择数据（仅真实分组，label 带设备数） */
+const groupTreeSelectData = computed(() =>
+  groupTree.value.map((g) => ({
+    value: g.id,
+    label: g.device_count ? `${g.name} (${g.device_count})` : g.name,
+    children: g.children?.length ? g.children.map(mapSelectNode) : undefined,
+  }))
+)
+function mapSelectNode(g) {
+  return {
+    value: g.id,
+    label: g.device_count ? `${g.name} (${g.device_count})` : g.name,
+    children: g.children?.length ? g.children.map(mapSelectNode) : undefined,
+  }
+}
+/** 编辑分组时父分组候选（排除自身及其子树） */
+const groupParentOptions = computed(() => {
+  const excludeId = groupForm.value.id
+  if (!excludeId) return groupTreeSelectData.value
+  const filterNode = (nodes) =>
+    (nodes || [])
+      .filter((n) => n.value !== excludeId)
+      .map((n) => ({ ...n, children: filterNode(n.children) }))
+  return filterNode(groupTreeSelectData.value)
+})
+
+const activeGroup = ref(null) // { id, name }，null 表示未按分组筛选
+
+async function loadGroups() {
+  try {
+    groupTree.value = await deviceGroupApi.tree()
+  } catch (err) {
+    ElMessage.error(err.message || '分组加载失败')
+  }
+}
+
+function onGroupNodeClick(data) {
+  if (data.key === 'all') {
+    clearGroupFilter()
+    return
+  }
+  activeGroup.value = { id: data.id, name: data.label }
+  filterGroupId.value = data.key === 'none' ? '0' : String(data.id)
+  page.value = 1
+  search()
+}
+
+function clearGroupFilter() {
+  activeGroup.value = null
+  filterGroupId.value = ''
+  groupTreeRef.value?.setCurrentKey(null)
+  page.value = 1
+  search()
+}
+
+/* ------------------------- 分组管理弹窗 ------------------------- */
+const showGroupDialog = ref(false)
+const groupSubmitting = ref(false)
+const groupForm = ref({ id: null, name: '', parent_id: null, description: '' })
+
+function openGroupDialog(node) {
+  groupForm.value = node
+    ? { id: node.id, name: node.label, parent_id: null, description: '' }
+    : { id: null, name: '', parent_id: null, description: '' }
+  // 编辑时回填真实 parent_id / description
+  if (node?.id) {
+    const find = (list) => {
+      for (const g of list) {
+        if (g.id === node.id) return g
+        const hit = find(g.children || [])
+        if (hit) return hit
+      }
+    }
+    const src = find(groupTree.value)
+    if (src) groupForm.value = { id: src.id, name: src.name, parent_id: src.parent_id, description: src.description || '' }
+  }
+  showGroupDialog.value = true
+}
+
+async function handleGroupSubmit() {
+  if (!groupForm.value.name.trim()) {
+    ElMessage.warning('请输入分组名称')
+    return
+  }
+  groupSubmitting.value = true
+  try {
+    if (groupForm.value.id) {
+      await deviceGroupApi.update(groupForm.value.id, {
+        name: groupForm.value.name,
+        parent_id: groupForm.value.parent_id ?? null,
+        description: groupForm.value.description,
+      })
+      ElMessage.success('分组修改成功')
+    } else {
+      await deviceGroupApi.create({
+        name: groupForm.value.name,
+        parent_id: groupForm.value.parent_id ?? null,
+        description: groupForm.value.description,
+      })
+      ElMessage.success('分组创建成功')
+    }
+    showGroupDialog.value = false
+    await loadGroups()
+  } catch (err) {
+    ElMessage.error(err.message || '分组保存失败')
+  } finally {
+    groupSubmitting.value = false
+  }
+}
+
+async function handleGroupDelete(node) {
+  const count = countGroupDevices(node)
+  const ok = await confirm(
+    `确认删除分组「${node.label}」？${count ? `组内 ${count} 台设备` : '组内设备'}及其子分组将上移到父分组。`,
+    '删除分组'
+  )
+  if (!ok) return
+  try {
+    await deviceGroupApi.remove(node.id)
+    ElMessage.success('分组已删除')
+    if (activeGroup.value?.id === node.id) clearGroupFilter()
+    await Promise.all([loadGroups(), search()])
+  } catch (err) {
+    ElMessage.error(err.message || '分组删除失败')
+  }
+}
+
+/** 分组节点（含子树）设备数 */
+function countGroupDevices(node) {
+  const find = (list) => {
+    for (const g of list) {
+      if (g.id === node.id) return g
+      const hit = find(g.children || [])
+      if (hit) return hit
+    }
+  }
+  const sum = (g) => (g.device_count || 0) + (g.children || []).reduce((acc, c) => acc + sum(c), 0)
+  const src = find(groupTree.value)
+  return src ? sum(src) : 0
+}
+
+/* ------------------------- 批量移动分组 ------------------------- */
+const showBatchGroupDialog = ref(false)
+const batchGroupId = ref(null)
+const batchGroupSubmitting = ref(false)
+
+function openBatchGroupDialog() {
+  batchGroupId.value = null
+  showBatchGroupDialog.value = true
+}
+
+async function handleBatchGroup() {
+  const ids = selectedRows.value.map((r) => r.id)
+  if (!ids.length) return
+  batchGroupSubmitting.value = true
+  try {
+    await deviceApi.batchGroup({ ids, group_id: batchGroupId.value ?? null })
+    ElMessage.success(`已移动 ${ids.length} 台设备`)
+    showBatchGroupDialog.value = false
+    selectedRows.value = []
+    await Promise.all([search(), loadGroups()])
+  } catch (err) {
+    ElMessage.error(err.message || '批量移动失败')
+  } finally {
+    batchGroupSubmitting.value = false
+  }
+}
 
 /* ------------------------- 统计数据 ------------------------- */
 const { data: statData, execute: loadStats } = useAsyncData(deviceApi.stats, {
@@ -1230,6 +1542,7 @@ const defaultForm = () => ({
   product_name: '',
   firmware_version: '',
   location: '',
+  group_id: null,
 })
 const form = ref(defaultForm())
 const rules = {
@@ -1254,6 +1567,7 @@ function openEditDialog(row) {
     product_name: row.product_name || '',
     firmware_version: row.firmware_version || '',
     location: row.location || '',
+    group_id: row.group_id ?? null,
   }
   showDialog.value = true
 }
@@ -1274,6 +1588,7 @@ async function handleSubmit() {
         product_id: product?.id,
         firmware_version: form.value.firmware_version,
         location: form.value.location,
+        group_id: form.value.group_id ?? null,
       })
       ElMessage.success('修改成功')
     } else {
@@ -1325,16 +1640,99 @@ function handleReset() {
   keyword.value = ''
   filterProduct.value = ''
   filterStatus.value = ''
+  clearGroupFilter()
   reset()
 }
 
 onMounted(() => {
   loadProducts()
   loadStats()
+  loadGroups()
 })
 </script>
 
 <style scoped>
+/* ---------------- 分组树侧栏 + 主区双栏布局 ---------------- */
+.device-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.group-panel {
+  flex-shrink: 0;
+  width: 230px;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 12px;
+}
+.group-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.group-panel__header h4 {
+  margin: 0;
+  font-size: 14px;
+  color: #303133;
+}
+.device-main {
+  flex: 1;
+  min-width: 0;
+}
+.group-node {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  overflow: hidden;
+}
+.group-node__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-node__label .el-icon {
+  color: #909399;
+}
+.group-node__actions {
+  display: none;
+  gap: 4px;
+  color: #909399;
+}
+.group-node:hover .group-node__actions {
+  display: inline-flex;
+}
+.group-node__act {
+  cursor: pointer;
+  font-size: 13px;
+}
+.group-node__act:hover {
+  color: #409eff;
+}
+.group-node__act--danger:hover {
+  color: #f56c6c;
+}
+.batch-group-tip {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #606266;
+}
+@media (max-width: 960px) {
+  .device-layout {
+    flex-direction: column;
+  }
+  .group-panel {
+    width: 100%;
+  }
+}
+
 .metric-cell {
   display: flex;
   align-items: center;

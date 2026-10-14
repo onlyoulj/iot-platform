@@ -70,3 +70,11 @@
 - 属性历史：device_prop_history（EAV）+ applyReported 写入（60s 去重）+ `GET /devices/:id/props-history`（数值分桶/枚举取点）；详情趋势图通用化（下拉切电量/信号/物模型数值属性）。
 - 生命周期时间轴：`GET /devices/:id/timeline` UNION 聚合 alerts/control_logs/upgrade_jobs/mqtt_logs/shadow + 创建/激活事件；详情抽屉 el-timeline 区块。
 - 踩坑：Node 脚本模拟设备用 CJS require('mqtt')（ESM 入口是浏览器构建，net 不可用）+ NODE_PATH=server/node_modules。
+
+## 设备分组 / OTA 灰度组（2026-10-15）
+- device_groups 自引用树（parent_id）+ devices.group_id（migrateDeviceColumns 幂等）；services/device-groups.js：getGroupTree（附直属设备数）/ getDescendantIds（子树 id 集，防环）。
+- 路由 /api/device-groups（device:view 读 / device:edit 写）：树查询 + CRUD；PUT 防环（父不可在自身子树）；DELETE 级联上移（子分组+设备上移到父）。
+- 设备列表 group_id 筛选（'0'=未分组，其余命中子树）+ group_name JOIN 返回；POST /devices/batch-group {ids, group_id|null} 批量移动；PUT 设备显式区分「未传=不改」「null=移出分组」（不能走 COALESCE）。
+- OTA 灰度组真落地：scope=灰度组 必带 group_id → 目标=分组子树∩产品，scope 落库「灰度组：{组名}」；解析优先级 group_id > device_names > 产品全量。
+- 前端：Devices.vue 分组树侧栏（虚拟根 全部/未分组 + el-tree，hover 编辑/删除）+ 点节点筛选（可关闭标签）+ 分组列 + 表单/批量移动 el-tree-select；OTA.vue 创建弹窗选「指定分组」出现必填目标分组树选 + 子树设备数提示。api.js：deviceGroupApi + deviceApi.batchGroup。
+- 种子在 init.js 末尾（设备种子之后）独立幂等块：3 大区+灰度验证组，按 DeviceName 归组（老库不匹配自动跳过）。

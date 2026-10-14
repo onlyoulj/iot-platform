@@ -4,6 +4,7 @@ import db from '../db/init.js';
 import { authenticate, requirePermission } from '../services/auth.js';
 import { emit as sseEmit, hasSseClient } from '../services/push.js';
 import mqtt from '../services/mqtt.js';
+import { getDescendantIds } from '../services/device-groups.js';
 
 const router = Router();
 
@@ -29,10 +30,22 @@ const JOB_STATUS_TEXT = {
 
 /**
  * 解析任务的目标设备列表
- * - 显式传入 device_names：按 SN 精确匹配（指定设备 / 灰度组）
+ * - 传入 group_id（灰度组）：该分组子树内 ∩ 目标产品的设备
+ * - 显式传入 device_names：按 SN 精确匹配（指定设备）
  * - 否则：取该产品下全部设备（全部设备）
  */
-function resolveTargetDevices(productName, deviceNames) {
+function resolveTargetDevices(productName, deviceNames, groupId) {
+  if (groupId) {
+    const ids = getDescendantIds(groupId);
+    if (!ids.length) return [];
+    const placeholders = ids.map(() => '?').join(',');
+    return db
+      .prepare(
+        `SELECT id, device_name, product_name, status FROM devices
+         WHERE group_id IN (${placeholders}) AND product_name = ?`
+      )
+      .all(...ids, productName);
+  }
   if (Array.isArray(deviceNames) && deviceNames.length) {
     const placeholders = deviceNames.map(() => '?').join(',');
     return db
@@ -197,14 +210,27 @@ router.get('/:id', canView, (req, res) => {
 
 // 创建任务
 router.post('/', canManage, (req, res) => {
-  const { name, firmware_id, firmware_version, product_name, scope, strategy, total, retry, timeout, scheduled_at, device_names } = req.body;
+  const { name, firmware_id, firmware_version, product_name, scope, strategy, total, retry, timeout, scheduled_at, device_names, group_id } = req.body;
   if (!name || !product_name) return res.json({ code: 400, message: '缺少必填字段' });
 
   const id = `OTA-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(Date.now()).slice(-3)}`;
 
-  // 解析目标设备：显式传入 device_names 则按 SN 匹配，否则取该产品全部设备
-  const targetDevices = resolveTargetDevices(product_name, device_names);
-  if (!targetDevices.length) return res.json({ code: 400, message: '目标产品下没有可升级的设备' });
+  // 灰度组：scope 为「灰度组」时必须携带 group_id
+  let scopeText = scope || '全部设备';
+  let groupId = null;
+  if (scope === '灰度组') {
+    groupId = Number(group_id);
+    if (!Number.isInteger(groupId)) return res.json({ code: 400, message: '灰度组发布必须选择设备分组' });
+    const group = db.prepare('SELECT name FROM device_groups WHERE id = ?').get(groupId);
+    if (!group) return res.json({ code: 400, message: '目标分组不存在' });
+    scopeText = `灰度组：${group.name}`;
+  }
+
+  // 解析目标设备：灰度组按分组子树圈定，显式 device_names 按 SN 匹配，否则取该产品全部设备
+  const targetDevices = resolveTargetDevices(product_name, device_names, groupId);
+  if (!targetDevices.length) {
+    return res.json({ code: 400, message: groupId ? '该分组下没有属于目标产品的设备' : '目标产品下没有可升级的设备' });
+  }
 
   // 忽略前端可能传入的 total，以实际目标设备数为准
   const initialStatus = strategy === 'immediate' ? 'running' : 'pending';
@@ -213,7 +239,7 @@ router.post('/', canManage, (req, res) => {
     db.prepare(`
       INSERT INTO ota_tasks (id, name, firmware_id, firmware_version, product_name, scope, strategy, total, retry, timeout, status, scheduled_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name, firmware_id || null, firmware_version || '', product_name, scope || '全部设备', strategy || 'immediate', targetDevices.length, retry ?? 3, timeout ?? 300, initialStatus, scheduled_at || null);
+    `).run(id, name, firmware_id || null, firmware_version || '', product_name, scopeText, strategy || 'immediate', targetDevices.length, retry ?? 3, timeout ?? 300, initialStatus, scheduled_at || null);
 
     // 为每个目标设备生成升级 job（pending → 等待推送）
     const insertJob = db.prepare(`

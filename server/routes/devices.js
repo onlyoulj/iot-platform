@@ -5,6 +5,7 @@ import { applyDeviceInfo } from '../services/device-info.js';
 import { getDeviceMetrics } from '../services/device-metrics.js';
 import { sendCommand, listCommands } from '../services/device-control.js';
 import { getShadow, setDesired, applyReported, getPropHistory } from '../services/thing-model.js';
+import { getDescendantIds, groupExists } from '../services/device-groups.js';
 
 const router = Router();
 
@@ -16,7 +17,7 @@ const canDelete = requirePermission('device:delete');
 
 // 列表（支持筛选 + 分页）
 router.get('/', canView, (req, res) => {
-  const { search, product, status, page = 1, pageSize = 20 } = req.query;
+  const { search, product, status, group_id, page = 1, pageSize = 20 } = req.query;
   let where = 'WHERE 1=1';
   const params = [];
 
@@ -26,15 +27,26 @@ router.get('/', canView, (req, res) => {
   }
   if (product) { where += ' AND d.product_name = ?'; params.push(product); }
   if (status) { where += ' AND d.status = ?'; params.push(status); }
+  // 分组筛选：group_id=0 表示未分组；其余命中分组自身 + 全部子孙分组（按子树圈设备）
+  if (group_id === '0') {
+    where += ' AND d.group_id IS NULL';
+  } else if (group_id) {
+    const ids = getDescendantIds(group_id);
+    if (!ids.length) return res.json({ code: 0, data: { list: [], total: 0, page: parseInt(page), pageSize: parseInt(pageSize) } });
+    where += ` AND d.group_id IN (${ids.map(() => '?').join(',')})`;
+    params.push(...ids);
+  }
 
   const total = db.prepare(`SELECT COUNT(*) as c FROM devices d ${where}`).get(...params).c;
+  const off = (parseInt(page) - 1) * parseInt(pageSize);
 
-  const offset = (parseInt(page) - 1) * parseInt(pageSize);
   const rows = db.prepare(`
-    SELECT d.*, p.name as product_display_name
-    FROM devices d LEFT JOIN products p ON d.product_id = p.id
+    SELECT d.*, p.name as product_display_name, g.name as group_name
+    FROM devices d
+    LEFT JOIN products p ON d.product_id = p.id
+    LEFT JOIN device_groups g ON d.group_id = g.id
     ${where} ORDER BY d.id DESC LIMIT ? OFFSET ?
-  `).all(...params, parseInt(pageSize), offset);
+  `).all(...params, parseInt(pageSize), off);
 
   // 附加设备属性
   const getProps = db.prepare('SELECT prop_name as name, prop_value as value, updated_at as updated FROM device_props WHERE device_id = ?');
@@ -56,7 +68,11 @@ router.get('/stats', canView, (req, res) => {
 
 // 详情
 router.get('/:id', canView, (req, res) => {
-  const row = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
+  const row = db
+    .prepare(
+      'SELECT d.*, g.name as group_name FROM devices d LEFT JOIN device_groups g ON d.group_id = g.id WHERE d.id = ?'
+    )
+    .get(req.params.id);
   if (!row) return res.json({ code: 404, message: '设备不存在' });
   row.props = db.prepare('SELECT prop_name as name, prop_value as value, updated_at as updated FROM device_props WHERE device_id = ?').all(row.id);
   res.json({ code: 0, data: row });
@@ -246,25 +262,53 @@ router.get('/:id/timeline', canView, (req, res) => {
 
 // 新增
 router.post('/', canEdit, (req, res) => {
-  const { name, device_name, product_id, product_name, firmware_version, location } = req.body;
+  const { name, device_name, product_id, product_name, firmware_version, location, group_id } = req.body;
   if (!name || !device_name || !product_name) return res.json({ code: 400, message: '缺少必填字段' });
 
   const exists = db.prepare('SELECT id FROM devices WHERE device_name = ?').get(device_name);
   if (exists) return res.json({ code: 400, message: 'DeviceName 已存在' });
 
+  const groupId = group_id ? Number(group_id) : null;
+  if (groupId != null && !groupExists(groupId)) return res.json({ code: 400, message: '目标分组不存在' });
+
   const result = db.prepare(`
-    INSERT INTO devices (name, device_name, product_id, product_name, firmware_version, location, status)
-    VALUES (?, ?, ?, ?, ?, ?, 'inactive')
-  `).run(name, device_name, product_id || null, product_name, firmware_version || '', location || '');
+    INSERT INTO devices (name, device_name, product_id, product_name, firmware_version, location, group_id, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'inactive')
+  `).run(name, device_name, product_id || null, product_name, firmware_version || '', location || '', groupId);
 
   res.json({ code: 0, data: { id: result.lastInsertRowid }, message: '添加成功' });
 });
 
+/**
+ * POST /api/devices/batch-group
+ * 批量移动设备到分组 body: { ids: [设备id], group_id: 分组id | null(移出分组) }
+ */
+router.post('/batch-group', canEdit, (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : [];
+  if (!ids.length) return res.json({ code: 400, message: '未选择任何设备' });
+
+  const groupId = req.body?.group_id ? Number(req.body.group_id) : null;
+  if (groupId != null && !groupExists(groupId)) return res.json({ code: 400, message: '目标分组不存在' });
+
+  const placeholders = ids.map(() => '?').join(',');
+  db.prepare(`UPDATE devices SET group_id = ? WHERE id IN (${placeholders})`).run(groupId, ...ids);
+  res.json({ code: 0, message: `已将 ${ids.length} 台设备移入${groupId != null ? '指定分组' : '未分组'}` });
+});
+
 // 修改
 router.put('/:id', canEdit, (req, res) => {
-  const { name, location, firmware_version, product_name, product_id } = req.body;
+  const { name, location, firmware_version, product_name, product_id, group_id } = req.body;
   const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
   if (!device) return res.json({ code: 404, message: '设备不存在' });
+
+  // 分组变更：group_id 为 null/空 = 移出分组（需显式区分「未传」与「置空」）
+  let nextGroupId;
+  if (group_id !== undefined) {
+    nextGroupId = group_id ? Number(group_id) : null;
+    if (nextGroupId != null && !groupExists(nextGroupId)) {
+      return res.json({ code: 400, message: '目标分组不存在' });
+    }
+  }
 
   // 若改了产品，校验目标产品存在并联动 product_id / product_name
   let nextProductId = null;
@@ -299,7 +343,16 @@ router.put('/:id', canEdit, (req, res) => {
     req.params.id
   );
 
-  const updated = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
+  // 分组变更单独更新：nextGroupId 为 null 表示移出分组，undefined 表示未修改
+  if (nextGroupId !== undefined) {
+    db.prepare('UPDATE devices SET group_id = ? WHERE id = ?').run(nextGroupId, req.params.id);
+  }
+
+  const updated = db
+    .prepare(
+      'SELECT d.*, g.name as group_name FROM devices d LEFT JOIN device_groups g ON d.group_id = g.id WHERE d.id = ?'
+    )
+    .get(req.params.id);
   res.json({ code: 0, message: '修改成功', data: updated });
 });
 

@@ -37,6 +37,17 @@ export const deviceApi = {
   commands: (id, limit = 50) => request.get(`/devices/${id}/commands`, { limit }),
   /** 下发远程控制指令：{ command, params } → { cmd_id, delivered, topics } */
   command: (id, data) => request.post(`/devices/${id}/command`, data),
+  /** 批量移动设备到分组：{ ids, group_id }（group_id 为 null 表示移出分组） */
+  batchGroup: (data) => request.post('/devices/batch-group', data),
+}
+
+/* ============================ 设备分组 ============================ */
+export const deviceGroupApi = {
+  /** 分组树（含每组直属设备数） */
+  tree: () => request.get('/device-groups'),
+  create: (data) => request.post('/device-groups', data),
+  update: (id, data) => request.put(`/device-groups/${id}`, data),
+  remove: (id) => request.del(`/device-groups/${id}`),
 }
 
 /* ============================ 固件管理 ============================ */
