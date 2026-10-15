@@ -148,6 +148,19 @@ Devices.vue
 
 `StatCards` 内部通过 `resolveIcon()` 解析字符串图标名，可直接消费后端返回的 `icon` 字段。
 
+### 前端业务模块（页面级能力）
+
+| 页面 / 路由 | 能力 | 权限 |
+| --- | --- | --- |
+| 仪表盘 `/dashboard` | 设备/固件/告警总览 + 在线趋势 + **API / MQTT 数据汇总卡** | `dashboard:view` |
+| 设备管理 `/devices` | 列表/筛选/分组树侧栏；**详情抽屉**：指标趋势图、远程控制面板、设备影子、生命周期时间轴 | `device:view` |
+| 产品管理 `/product` | 产品卡片菜单内**物模型**弹窗（属性 CRUD） | `product:view` |
+| 告警中心 `/alert` | 三页签：告警列表 / **规则配置** / **通知渠道** | `alert:view` |
+| 数据大屏 `/screen` | 全屏深色大屏（独立布局、不在侧栏），复用现有接口聚合展示 | `dashboard:view` 或 `stats:view` |
+| 登录 `/login` | **登录与注册合一**：单一路由，左图右表单 / 右图左表单侧滑切换 | 公开 |
+
+> 数据大屏 `meta.fullscreen=true`（独立全屏布局）、`hidden=true`（不进侧栏）、`perm:['dashboard:view','stats:view']`（满足其一即可，适合值班/演示）。登录注册合一只拆一个 `Login.vue`，由组件内状态切换，未单独拆出注册路由。
+
 ---
 
 ## 4. 后端架构
@@ -177,6 +190,12 @@ Devices.vue
 | `services/device-monitor.js` | 心跳超时扫描（60s 定时 + Redis 分布式锁） |
 | `services/mqtt-logger.js` | MQTT 全生命周期行为日志 |
 | `services/mqtt-repush.js` | 设备上线补推积压升级任务（防抖 + 版本检查 + 次数上限） |
+| `services/device-groups.js` | 分组树构建、`getDescendantIds` 子树收集（防环），支撑设备筛选与批量移动 |
+| `services/device-metrics.js` | 电量/信号历史双写（SQLite 底座 + Redis 热窗口）+ 分桶降采样 |
+| `services/device-control.js` | 远程控制指令下发与 `control_ack` 回执 / 超时扫描（写 `device_control_logs`） |
+| `services/thing-model.js` | 物模型属性校验、设备影子 `desired`/`reported` 双态、属性历史采样 |
+| `services/alert-engine.js` | 周期评估告警规则生成 `alerts`（分布式锁 + 冷却防刷） |
+| `services/alert-notify.js` | 按渠道（wecom/dingtalk/feishu/webhook/email）推送告警 |
 | `db/index-core.js` | Database 单例，WAL + 外键开启 |
 | `db/init.js` | 建表 + 业务种子数据 + 固件占位文件 + 列迁移（`migrateDeviceColumns`/`migrateJobColumns`） |
 | `db/auth-schema.js` | 权限点定义 `PERMISSIONS` + 口令哈希 + 用户组/用户种子 |
@@ -319,7 +338,7 @@ user_groups 1───N users          user_groups 1───N group_permissions
 | 表 | 说明 |
 | --- | --- |
 | `products` | 产品模型 |
-| `devices` | 设备档案（含 `active_time` 首次激活、`last_online` 最近上线、`battery`/`signal`/`hardware_version`/`longitude`/`latitude`/`info_updated_at` 设备信息列） |
+| `devices` | 设备档案（含 `active_time` 首次激活、`last_online` 最近上线、`group_id` 分组、`battery`/`signal`/`hardware_version`/`longitude`/`latitude`/`info_updated_at` 设备信息列） |
 | `device_props` | 设备实时属性 |
 | `firmwares` | 固件元数据（含 MD5、状态、升级统计） |
 | `firmware_compat` | 固件兼容型号区间 |
@@ -334,12 +353,21 @@ user_groups 1───N users          user_groups 1───N group_permissions
 | `api_call_logs` | API 调用明细日志（method/path/route/status/duration/ip/user_id…，含 3 索引） |
 | `mqtt_logs` | MQTT 全生命周期行为日志（event_type/direction/topic/channel…，含 3 索引） |
 | `device_online_stats` | 仪表盘在线数快照（`date` PK + `online_count`/`total_count`，幂等建表） |
+| `device_groups` | 设备分组自引用树（`parent_id` → 父分组，顶层 `null`） |
+| `device_metrics` | 电量/信号趋势底座（SQLite，Redis 热窗口双写） |
+| `device_control_logs` | 远程控制指令日志（`cmd_id`/`command`/`status`/`result`/`acked_at`） |
+| `alert_rules` | 告警规则（`metric`/`operator`/`threshold`/`level`/`cooldown`/`product_name`） |
+| `alert_channels` | 通知渠道（`type`/`config`(JSON)/`levels`） |
+| `thing_properties` | 产品物模型属性定义（`identifier`/`data_type`/`access_mode`/`unit`） |
+| `device_shadows` | 设备影子双态（`desired`/`reported` JSON + 双版本号） |
+| `device_prop_history` | 物模型自定义属性历史（EAV） |
+| `alerts` | 告警；新增列 `rule_id`/`rule_eval_at`（规则引擎冷却用，可空以兼容人工告警） |
 
 关键索引：`idx_duj_task`、`idx_duj_device`、`idx_users_group`。
 
 ---
 
-## 7. 设备侧固件订阅与 OTA 推送
+## 7. 设备接入与运维（订阅 / OTA / 影子 / 控制）
 
 除管理端页面外，平台对外提供一条**面向设备**的固件订阅 + OTA 推送链路，与管理端共用同一套固件数据。
 
@@ -416,6 +444,20 @@ MQTT 通道另有 `mqtt-repush.js` 在设备上线（`uplink`/`info`）时防抖
 管理端「一键生成订阅链接」走 `GET /api/subscribe/:key/link`：拿到带 `token` 的订阅地址后，前端**再用该 token 真实请求一次订阅接口**，把设备端将收到的响应原样展示在弹窗里。这样现场调试无需真机即可核对设备最终拿到的内容；同时这次请求会真实触发激活，因此弹窗会在状态变化时提示并刷新列表。
 
 > ⚠️ 打开设备页「订阅」弹窗本身就会激活该设备（弹窗会真实请求一次订阅接口预览响应），排查时别误判。
+
+### 7.6 管理端设备运维能力
+
+除订阅 / OTA 链路外，管理端还提供一组面向设备运行态的能力，配套设备详情抽屉（[API.md](./API.md) §2.2）：
+
+| 能力 | 入口 / 接口 | 说明 |
+| --- | --- | --- |
+| 指标趋势 | `GET /api/devices/:id/metrics` | 电量/信号历史，SQLite 底座 + Redis 热窗口双写，>500 点分桶降采样 |
+| 远程控制 | `POST /api/devices/:id/command` | 经 MQTT `downlink` 下发指令，`device_control_logs` 记录；`control_ack` 回执推进 `sent→delivered→success/timeout` |
+| 设备影子 | `GET/PUT/POST /api/devices/:id/shadow*` | 物模型 `desired`/`reported` 双态，期望值校验后下发 `shadow_set` |
+| 属性历史 | `GET /api/devices/:id/props-history` | 物模型数值属性 `device_prop_history`（EAV，60s 去重） |
+| 生命周期时间轴 | `GET /api/devices/:id/timeline` | 聚合告警 / 控制 / 升级 / MQTT / 影子 / 创建激活六类事件 |
+
+设备信息上报（电量/信号/MAC/硬件版本/固件版本/经纬度）由 `device-info` 归一化落库并视为在线心跳；主通道为 MQTT `device/{id}/info` 与订阅接口 `POST /api/subscribe/:key/info`（详见 [INTEGRATION.md](./INTEGRATION.md) 与 [MQTT.md](./MQTT.md)）。告警规则引擎（`alert-engine` 挂 `device-monitor` 60s 扫描，分布式锁 + 冷却）命中即生成 `alerts` 并经 `alert-notify` 按渠道推送。
 
 ---
 

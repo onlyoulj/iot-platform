@@ -4,6 +4,7 @@ import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import viteCompression from 'vite-plugin-compression'
 import { fileURLToPath, URL } from 'node:url'
+import fs from 'node:fs'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -16,7 +17,28 @@ export default defineConfig(({ mode }) => {
 
   const isProd = mode === 'production'
 
+  // 页脚构建时注入：事实来源仍是 server/config.json（改页脚后重启 dev / 重新构建生效），
+  // 前端零请求渲染，不再提供 /api/system/footer 接口
+  let appFooter = { text: '© 2026 IoT 物联网管理平台', company: '', icp: '', contact: '' }
+  try {
+    const cfg = JSON.parse(
+      fs.readFileSync(fileURLToPath(new URL('./server/config.json', import.meta.url)), 'utf8')
+    )
+    appFooter = {
+      text: cfg.FOOTER_TEXT || appFooter.text,
+      company: cfg.FOOTER_COMPANY || '',
+      icp: cfg.FOOTER_ICP || '',
+      contact: cfg.FOOTER_CONTACT || '',
+    }
+  } catch {
+    // config.json 不存在（首次启动前）用默认页脚
+  }
+
   return {
+    define: {
+      __APP_FOOTER__: JSON.stringify(appFooter),
+    },
+
     plugins: [
       vue(),
       // Element Plus 组件与指令（v-loading 等）按需自动引入

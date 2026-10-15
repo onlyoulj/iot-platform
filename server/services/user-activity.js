@@ -79,10 +79,16 @@ const REDIS_HEARTBEAT_KEY = 'user:heartbeat';
 /** 进程内存降级：userId → 最后活跃时间戳(ms) */
 const localHeartbeat = new Map();
 
-/** 刷新用户在线心跳 */
+/** 心跳写节流：同用户 60s 内重复 touch 直接跳过（authenticate 每请求都会调用） */
+const TOUCH_THROTTLE = 60 * 1000;
+const lastTouchAt = new Map();
+
+/** 刷新用户在线心跳（60s 节流） */
 export async function touchUserOnline(userId) {
   if (!userId) return;
   const now = Date.now();
+  if (now - (lastTouchAt.get(userId) || 0) < TOUCH_THROTTLE) return;
+  lastTouchAt.set(userId, now);
   // 内存总是写一份（Redis 降级时立即可用）
   localHeartbeat.set(userId, now);
   if (redis.isReady()) {
@@ -96,6 +102,7 @@ export async function touchUserOnline(userId) {
 export async function removeUserOnline(userId) {
   if (!userId) return;
   localHeartbeat.delete(userId);
+  lastTouchAt.delete(userId);
   if (redis.isReady()) {
     try {
       await redis.hdel(REDIS_ONLINE_KEY, String(userId));

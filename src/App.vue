@@ -1,7 +1,7 @@
 <template>
   <el-config-provider :locale="zhCn">
     <!-- 登录页等公开页面使用独立全屏布局 -->
-    <router-view v-if="isPublicPage" v-slot="{ Component }">
+    <router-view v-if="isFullscreenPage" v-slot="{ Component }">
       <transition name="fade" mode="out-in">
         <component :is="Component" />
       </transition>
@@ -138,7 +138,8 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
-import { alertApi, authApi, systemApi } from '@/utils/api'
+import { alertApi, authApi } from '@/utils/api'
+import { APP_FOOTER } from '@/config/footer'
 import { ElMessage } from '@/utils/element'
 import { confirm } from '@/utils/dialog'
 import { debounce } from '@/utils/performance'
@@ -160,8 +161,9 @@ const COLLAPSE_KEY = 'iot:sidebar-collapsed'
 const isCollapsed = ref(localStorage.getItem(COLLAPSE_KEY) === '1')
 const unhandledCount = ref(0)
 
-/** 公开页面（登录页等）使用全屏布局，不渲染侧边栏与顶栏 */
+/** 公开页面（登录页等）/ 全屏页（数据大屏）不渲染侧边栏与顶栏 */
 const isPublicPage = computed(() => Boolean(route.meta?.public))
+const isFullscreenPage = computed(() => Boolean(route.meta?.public || route.meta?.fullscreen))
 
 const canManageUsers = computed(() => hasPermission('user:manage'))
 
@@ -277,26 +279,13 @@ async function loadUnread() {
   }
 }
 
-/* ---------------- 全局页脚 ---------------- */
-const footer = ref({ text: '© 2026 IoT 物联网管理平台', company: '', icp: '', contact: '' })
-
-const footerItems = computed(() => {
-  const f = footer.value
-  const items = []
-  if (f.text) items.push(f.text)
-  if (f.company) items.push(f.company)
-  if (f.icp) items.push(f.icp)
-  if (f.contact) items.push(f.contact)
-  return items
-})
-
-async function loadFooter() {
-  try {
-    footer.value = await systemApi.getFooter()
-  } catch {
-    // 页脚加载失败用默认值，不影响使用
-  }
-}
+/* ---------------- 全局页脚（构建时注入，零请求） ---------------- */
+const footerItems = [
+  APP_FOOTER.text,
+  APP_FOOTER.company,
+  APP_FOOTER.icp,
+  APP_FOOTER.contact,
+].filter(Boolean)
 
 // 登录页不展示角标；登录后进入受保护页面时再拉取
 watch(isPublicPage, (isPublic) => {
@@ -304,15 +293,18 @@ watch(isPublicPage, (isPublic) => {
 })
 
 /* ---------------- 在线心跳 ---------------- */
-// 登录态下每 60s 调一次 /auth/me，保持后端在线标记不过期
+// 后端 authenticate 中间件对每个带 token 的请求都会刷新在线标记（5 分钟 TTL），
+// /auth/me 仅作为挂机兜底心跳：4 分钟一次（TTL 内安全），页面不可见时暂停、
+// 回到可见立即补跳一次并恢复定时，整体请求数相比旧 60s 轮询大幅降低
+const HEARTBEAT_INTERVAL = 4 * 60 * 1000
 let heartbeatTimer = null
+function heartbeat() {
+  authApi.me().then((profile) => setUser(profile)).catch(() => {})
+}
 function startHeartbeat() {
   stopHeartbeat()
-  heartbeatTimer = setInterval(() => {
-    if (isLoggedIn.value) {
-      authApi.me().then((profile) => setUser(profile)).catch(() => {})
-    }
-  }, 60000)
+  if (!isLoggedIn.value || document.visibilityState !== 'visible') return
+  heartbeatTimer = setInterval(heartbeat, HEARTBEAT_INTERVAL)
 }
 function stopHeartbeat() {
   if (heartbeatTimer) {
@@ -325,6 +317,17 @@ watch(isLoggedIn, (logged) => {
   else stopHeartbeat()
 })
 
+// 标签页切走停心跳，切回立即补跳并重启定时器
+function handleVisibilityChange() {
+  if (!isLoggedIn.value) return
+  if (document.visibilityState === 'visible') {
+    heartbeat()
+    startHeartbeat()
+  } else {
+    stopHeartbeat()
+  }
+}
+
 // 窗口变窄时自动收起侧边栏（防抖避免 resize 频繁触发重排）
 const handleResize = debounce(() => {
   if (window.innerWidth < 992) isCollapsed.value = true
@@ -332,14 +335,15 @@ const handleResize = debounce(() => {
 
 onMounted(() => {
   if (!isPublicPage.value) loadUnread()
-  loadFooter()
   if (isLoggedIn.value) startHeartbeat()
   window.addEventListener('resize', handleResize)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   handleResize()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
   stopHeartbeat()
 })
 </script>

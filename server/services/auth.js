@@ -2,8 +2,8 @@
  * 鉴权与会话
  * ------------------------------------------------------------------
  * 设计要点：
- * 1. 登录成功后签发**无状态 token**：`base64url(payload).HMAC-SHA256(payload)`，
- *    payload 含 { uid, iat, exp }，服务端不落库（与设备订阅 token 同思路）。
+ * 1. 登录成功后签发**无状态加密 token**：AES-256-GCM 加密 payload
+ *    （{ uid, iat, exp }，随机 IV + 认证标签防篡改），服务端不落库。
  * 2. token 自身不含任何权限，权限在每次请求时按 group_id 实时查库，
  *    因此「改了用户组权限」立即生效，无需等 token 过期。
  * 3. 支持两种携带方式：`Authorization: Bearer <token>` 优先，其次 `?token=`，
@@ -24,34 +24,52 @@ const TTL = Number(process.env.AUTH_TOKEN_TTL || 7 * 24 * 3600); // 秒，默认
 
 /* ============================ token ============================ */
 
-function sign(payloadB64) {
-  return crypto.createHmac('sha256', SECRET).update(payloadB64).digest('base64url');
-}
+/**
+ * token 加密：AES-256-GCM（随机 IV + 认证标签）。
+ * 旧版为 base64 明文 payload + HMAC 签名（uid/时间可读），
+ * 现改为密文存储，token 不可读；GCM 认证标签同时保证完整性（防篡改）。
+ * 密钥从 AUTH_SECRET 派生（与签名密钥域分离）。
+ */
+const ENC_KEY = crypto.createHash('sha256').update(`${SECRET}::aes-256-gcm`).digest();
+const IV_LEN = 12;
+const TAG_LEN = 16;
 
-/** 签发 token */
+/** 签发 token：base64url(iv + authTag + ciphertext) */
 export function issueToken(userId) {
   const now = Math.floor(Date.now() / 1000);
-  const payload = Buffer.from(
-    JSON.stringify({ uid: userId, iat: now, exp: now + TTL })
-  ).toString('base64url');
-  return `${payload}.${sign(payload)}`;
+  const iv = crypto.randomBytes(IV_LEN);
+  const cipher = crypto.createCipheriv('aes-256-gcm', ENC_KEY, iv);
+  const enc = Buffer.concat([
+    cipher.update(JSON.stringify({ uid: userId, iat: now, exp: now + TTL }), 'utf8'),
+    cipher.final(),
+  ]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, enc]).toString('base64url');
 }
 
-/** 校验并解析 token，失败返回 null */
+/** 校验并解析 token（AES-256-GCM 认证解密），失败返回 null */
 export function parseToken(token) {
   if (!token || typeof token !== 'string') return null;
-  const [payloadB64, signature] = token.split('.');
-  if (!payloadB64 || !signature) return null;
 
-  const expected = sign(payloadB64);
-  const a = Buffer.from(signature);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  let raw;
+  try {
+    raw = Buffer.from(token, 'base64url');
+  } catch {
+    return null;
+  }
+  if (raw.length <= IV_LEN + TAG_LEN) return null;
+
+  const iv = raw.subarray(0, IV_LEN);
+  const tag = raw.subarray(IV_LEN, IV_LEN + TAG_LEN);
+  const enc = raw.subarray(IV_LEN + TAG_LEN);
 
   let payload;
   try {
-    payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    const decipher = crypto.createDecipheriv('aes-256-gcm', ENC_KEY, iv);
+    decipher.setAuthTag(tag);
+    payload = JSON.parse(Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8'));
   } catch {
+    // 认证失败（篡改/伪造）或旧版明文 token —— 一律视为无效，要求重新登录
     return null;
   }
   if (!payload?.uid) return null;

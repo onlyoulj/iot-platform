@@ -116,9 +116,12 @@ router.get('/product-distribution', (req, res) => {
   res.json({ code: 0, data: rows });
 });
 
-// 最新告警
+// 最新告警（?limit= 可调数量，供数据大屏滚动列表拉更多；默认 5 上限 50）
 router.get('/recent-alerts', (req, res) => {
-  const rows = db.prepare('SELECT content as msg, created_at as time, level FROM alerts ORDER BY created_at DESC LIMIT 5').all();
+  const limit = Math.min(Math.max(parseInt(req.query.limit) || 5, 1), 50);
+  const rows = db
+    .prepare('SELECT content as msg, device_name, product_name, status, created_at as time, level FROM alerts ORDER BY created_at DESC LIMIT ?')
+    .all(limit);
   res.json({ code: 0, data: rows });
 });
 

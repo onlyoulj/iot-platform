@@ -3,6 +3,18 @@
     <!-- 统计卡片 -->
     <StatCards :items="statItems" />
 
+    <!-- 数据大屏入口 -->
+    <div class="screen-entry" role="button" tabindex="0" @click="openScreen" @keyup.enter="openScreen">
+      <div class="screen-entry__icon">
+        <el-icon :size="24"><DataBoard /></el-icon>
+      </div>
+      <div class="screen-entry__text">
+        <b>数据大屏</b>
+        <span>在线率 · 实时消息流 · 告警滚动 —— 值班 / 演示全屏视图（新标签页打开）</span>
+      </div>
+      <el-icon class="screen-entry__arrow"><ArrowRight /></el-icon>
+    </div>
+
     <!-- 趋势 + 分布 -->
     <el-row :gutter="16">
       <el-col :xs="24" :lg="16">
@@ -168,6 +180,12 @@ import { ALERT_LEVEL, OTA_STATUS, dictValue } from '@/constants'
 import { formatNumber } from '@/utils/format'
 
 const router = useRouter()
+
+/** 打开数据大屏（全屏页，新标签页便于值班场景同时保留仪表盘） */
+function openScreen() {
+  const href = router.resolve('/screen').href
+  window.open(href, '_blank')
+}
 
 const loading = ref(false)
 const trendDays = ref(7)
@@ -474,6 +492,61 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* ---------------- 数据大屏入口 ---------------- */
+.screen-entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 12px 18px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(120deg, #1e3a8a, #0f766e 65%, #0d9488);
+  background-size: 160% 100%;
+  transition: background-position 0.4s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 2px 10px rgba(14, 116, 144, 0.25);
+}
+.screen-entry:hover {
+  background-position: 100% 0;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(14, 116, 144, 0.35);
+}
+.screen-entry__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.15);
+}
+.screen-entry__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.screen-entry__text b {
+  font-size: 15px;
+}
+.screen-entry__text span {
+  font-size: 12px;
+  opacity: 0.82;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.screen-entry__arrow {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+.screen-entry:hover .screen-entry__arrow {
+  transform: translateX(4px);
+}
+
 .muted {
   color: #909399;
   font-size: 12px;

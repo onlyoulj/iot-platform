@@ -39,7 +39,7 @@ const chrome = spawn(
     '--hide-scrollbars',
     `--remote-debugging-port=${DEBUG_PORT}`,
     `--user-data-dir=${profile}`,
-    '--window-size=1280,800',
+    '--window-size=420,900',
     'about:blank',
   ],
   { stdio: 'ignore' }

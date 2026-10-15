@@ -87,6 +87,13 @@ const routes = [
     meta: { title: '用户管理', icon: 'User', perm: 'user:view' },
   },
   {
+    // 数据大屏：独立全屏页（无侧栏），值班 / 演示用
+    path: '/screen',
+    name: 'BigScreen',
+    component: () => import('@/views/Screen.vue'),
+    meta: { title: '数据大屏', hidden: true, fullscreen: true, perm: ['dashboard:view', 'stats:view'] },
+  },
+  {
     path: '/groups',
     name: 'Groups',
     component: () => import('@/views/Groups.vue'),

@@ -167,6 +167,53 @@
 
 **GET `/` → `data`**：树形数组，节点 `{ id, name, parent_id, description, device_count, children: [] }`。
 
+### 2.2 设备指标趋势与运维 `/api/devices/:id`
+
+**鉴权**：整组 `device:view`；标注的写操作需 `device:edit`。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/:id/metrics?range=24h` | 电量/信号随时间变化的历史点（趋势图数据源） |
+| GET | `/:id/commands` | 远程控制指令下发记录 |
+| POST | `/:id/command` | 下发一条远程控制指令（需 `device:edit`） |
+| GET | `/:id/shadow` | 设备影子双态（desired / reported） |
+| PUT | `/:id/shadow/desired` | 设置期望态并下发（需 `device:edit`） |
+| POST | `/:id/shadow/reported` | 补录上报态（调试用，需 `device:edit`） |
+| GET | `/:id/props-history` | 物模型自定义属性历史 |
+| GET | `/:id/timeline` | 设备生命周期时间轴 |
+| POST | `/:id/info` | 管理端补录设备信息（需 `device:edit`） |
+
+**GET `/:id/metrics` → `data`**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `points` | array | `[{ time, battery, signal }]`；`battery` 为百分比、`signal` 为 dBm，缺失为 `null` |
+| `source` | string | `redis`（≤24h 热窗口优先）或 `sqlite`（底座） |
+| `range` | string | 实际返回的时间窗 |
+| `bucket` | number | 分桶秒数，`0` 表示未降采样 |
+
+`range` 取值 `1h` / `6h` / `24h`（默认）/ `7d` / `30d`。数据点双写 SQLite 底座 + Redis 热窗口（1440 条 / TTL 7 天）；超过 500 点按时间分桶 AVG 降采样，前端趋势图按 `range` 切换时间轴。
+
+**POST `/:id/command` 请求体**
+
+```json
+{ "command": "reboot", "params": { "delay": 3 } }
+```
+
+`params` 缺省 `{}`。响应 `data`: `{ cmd_id, delivered, topics }`；`delivered=true` 表示已通过 MQTT 下行（或 REST API 降级）送达。`device_control_logs` 记录每条指令，状态 `sent → delivered → success / failed / timeout`：设备回执 `control_ack` 后推进，60s 内未回执由扫描任务置 `timeout`。
+
+**GET `/:id/commands` → `data`**：`[{ cmd_id, command, params, status, result, operator, created_at, acked_at }]`（`limit` 默认 50，夹 1–200）。
+
+**设备影子（双态）**
+
+`GET /:id/shadow` 返回 `{ device_id, desired, reported, desired_version, reported_version, desired_updated_at, reported_updated_at, updated_at }`。`PUT /:id/shadow/desired` 请求体 `{ desired: { key: value } }`（兼容裸对象），经物模型校验后通过 MQTT 下发 `shadow_set` 并 `desired_version + 1`；`POST /:id/shadow/reported` 供调试补录设备上报态，返回 `{ applied, invalid, shadow }`（`invalid` 为未通过校验的字段）。
+
+**GET `/:id/props-history` → `data`**：`{ points: [{ time, value }], identifier, name, data_type, unit, bucket }`。查询参数 `identifier`（必填，物模型属性标识）、`range`（同指标）。数据来自 `device_prop_history`（EAV 表），物模型数值属性上报 60s 去重。
+
+**GET `/:id/timeline` → `data`**：`[{ type, status, title, detail, time }]`，`type ∈ alert / command / upgrade / mqtt / shadow / lifecycle`。聚合告警、控制日志、升级任务、MQTT 日志、影子变更与创建/激活事件，`limit` 默认 100（夹 1–300）。
+
+**POST `/:id/info` 请求体**：`{ battery, signal, mac, hardware_version, firmware_version, longitude, latitude, location }`，字段均可选、仅更新提供的字段。归一化：电量 `0–1` 小数 ×100 得百分比；信号质量 `%` → dBm；经纬度越界丢弃；上报视为在线心跳（`fault` 保持）。设备侧主通道为 MQTT `device/{id}/info` 或订阅接口 `POST /api/subscribe/:key/info`（见 §7 与 [INTEGRATION.md](./INTEGRATION.md)）。
+
 ---
 
 ## 3. 固件 `/api/firmware`
@@ -339,6 +386,32 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 **POST `/` 请求体**：`{ name, node_type, net_type, data_format, desc }`，`name` 必填。
 `key` / `icon` / `color` 由服务端随机生成。
 
+### 5.1 物模型属性 `/api/products/:id/properties`
+
+**鉴权**：读 `product:view`，写 `product:manage`。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/:id/properties` | 产品下全部属性定义（按 `sort` 排序） |
+| POST | `/:id/properties` | 新增属性，需 `product:manage` |
+| PUT | `/:id/properties/:propId` | 修改属性，需 `product:manage` |
+| DELETE | `/:id/properties/:propId` | 删除属性，需 `product:manage` |
+
+**属性对象**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `identifier` | string | 属性标识（字母开头 ≤64 位），同一产品内唯一 |
+| `name` | string | 展示名称 |
+| `data_type` | string | `int` / `float` / `bool` / `string` / `enum` |
+| `access_mode` | string | `r`（只读）/ `w`（只写）/ `rw`（读写） |
+| `constraint_min` / `constraint_max` | number | 数值约束（可选） |
+| `unit` | string | 单位；`enum` 时存逗号分隔的可选值 |
+| `required` | 0\|1 | 是否必选 |
+| `sort` | number | 排序 |
+
+设备侧按 `identifier` 上报属性值，平台经物模型校验后写入 `device_shadows.reported` 与 `device_prop_history`；产品卡片菜单与设备详情「设备影子」面板共用此定义。
+
 ---
 
 ## 6. 告警 `/api/alerts`
@@ -387,6 +460,56 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 
 **POST `/:id/handle` 请求体**：`{ "action": "确认" | "忽略" | "修复", "remark": "..." }`
 处理后 `status` 置为 `handled`、`handler` 置为 `管理员`、`read` 置为 `1`。
+
+### 6.1 告警规则引擎 `/api/alerts/rules`
+
+**鉴权**：读 `alert:view`，写 `alert:handle`（含 test）。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/rules` | 规则列表 |
+| POST | `/rules` | 新增规则 |
+| PUT | `/rules/:id` | 修改规则 |
+| DELETE | `/rules/:id` | 删除规则 |
+| POST | `/rules/:id/test` | 手动触发评估（跳过冷却，便于调试） |
+
+**规则对象**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `metric` | string | 评估指标：`battery`（电量）/ `signal`（信号）/ `offline`（离线） |
+| `operator` | string | `lt` / `gt` / `lte` / `gte` / `eq` |
+| `threshold` | number | 阈值（百分比或 dBm；`offline` 忽略） |
+| `level` | string | 触发告警级别 `critical` / `major` / `minor` / `info` |
+| `product_name` | string | 限定产品，空表示全部产品 |
+| `cooldown` | number | 同设备同规则冷却秒数（默认 300），防刷 |
+| `enabled` | 0\|1 | 是否启用 |
+
+规则由 `alert-engine` 挂在 `device-monitor` 的 60s 扫描内评估（分布式锁），命中即生成 `alerts` 并触发通知；`alerts` 表新增 `rule_id` / `rule_eval_at` 用于冷却判断。系统启动种子补齐 3 条默认规则（幂等，老库不重复写入）。
+
+### 6.2 通知渠道 `/api/alerts/channels`
+
+**鉴权**：读 `alert:view`，写 `alert:handle`（含 test）。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/channels` | 渠道列表 |
+| GET | `/channels/types` | 支持的渠道类型字典 |
+| POST | `/channels` | 新增渠道 |
+| PUT | `/channels/:id` | 修改渠道 |
+| DELETE | `/channels/:id` | 删除渠道 |
+| POST | `/channels/:id/test` | 发送测试消息验证配置 |
+
+**渠道对象**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `type` | string | `wecom` / `dingtalk` / `feishu` / `webhook` / `email` |
+| `config` | object | 渠道配置（`webhook_url`、`body_template`、`secret` 等；`email` 预留） |
+| `enabled` | 0\|1 | 是否启用 |
+| `levels` | string | 接收的告警级别（逗号分隔，空表示全部） |
+
+告警产生后由 `alert-notify` 按渠道类型 fire-and-forget 推送，钉钉等支持加签；`levels` 用于按级别过滤。
 
 ---
 
@@ -905,3 +1028,63 @@ if (resp.update_available) {
 ```json
 { "code": 0, "message": "ok", "time": "2026-05-05T14:00:00.000Z" }
 ```
+
+---
+
+## 12. API 统计 `/api/stats`
+
+**鉴权**：整组 `stats:view`。数据源为 `api_call_logs`（由 `api-logger` 中间件记录每个 `/api` 请求）。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/overview` | 总量 / 今日 / 近 1h / 错误率 / 平均耗时等汇总 |
+| GET | `/trend?days=7` | 按天请求量与错误趋势（1–90 天） |
+| GET | `/by-path?limit=10` | 按接口路径聚合（Top N） |
+| GET | `/by-method` | 按 HTTP 方法聚合 |
+| GET | `/by-status` | 按状态码区间（1xx–5xx）聚合 |
+| GET | `/slow?limit=20` | 最慢请求明细 |
+| GET | `/recent` | 最近请求明细（分页） |
+
+`/overview` 响应 `data` 含 `total` / `today` / `lastHour` / `errors` / `avgDuration` / `errorRate` / `source`（`redis` 实时计数或 `sqlite` 明细）。运维大屏「API 汇总」卡片即消费此组接口。
+
+## 13. 系统管理 `/api/system`
+
+**鉴权**：整组 `system:manage`（仅超管拥有此权限点）。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/config` | 系统配置（敏感项脱敏） |
+| PUT | `/config` | 修改配置（持久化 `config.json`） |
+| GET | `/info` | 运行信息（Node 版本 / 运行时长 / 内存 / Redis / MQTT 状态） |
+| POST | `/scan-offline` | 手动触发一次离线扫描 |
+
+配置由 `config-store` 持久化到 `server/config.json` 并同步 `process.env`。`PUT` 时敏感项传空或 `••••••` 表示不改；热更新项（如 `DEVICE_OFFLINE_TIMEOUT`、`MQTT_REST_FALLBACK`、`MQTT_REPUSH_*`、`API_LOG_*`）即时生效，其余改后需重启后端。`GET` 对密钥类字段脱敏展示。
+
+## 14. MQTT 运维 `/api/mqtt`
+
+**鉴权**：读操作 `device:view`；写操作需 `ota:manage` 或 `device:edit`（满足其一）。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/status` | broker 连接状态（enabled / connected / ready / host / port / url…） |
+| GET | `/clients` | 在线客户端列表（REST API 不可用时返回空 + 说明） |
+| GET | `/connection` | 连接信息（broker 地址 / 上下行主题 / 用户名） |
+| POST | `/publish` | 向单设备下行消息（`{ device_id, type, data }`） |
+| POST | `/broadcast` | 按产品广播下行消息 |
+| POST | `/test` | 向单设备发送测试消息 |
+
+下行复用 OTA / 远程控制同一 `device/{id}/downlink` 通道，`type` 区分 `upgrade` / `control` / `test`；优先 MQTT 长连接，失败走 EMQX REST API（`MQTT_REST_FALLBACK` 控制）。运维大屏「MQTT 消息流」消费 `/mqtt-logs/recent`。
+
+## 15. MQTT 日志 `/api/mqtt-logs`
+
+**鉴权**：整组 `stats:view`。数据源为 `mqtt_logs`（由 `mqtt-logger` 记录 MQTT 全生命周期事件）。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/overview` | 总量 / 今日 / 收发 / 错误率汇总 |
+| GET | `/trend?days=7` | 按天收发趋势 |
+| GET | `/by-type` | 按事件类型聚合 |
+| GET | `/by-channel` | 按通道（mqtt-client / rest-api）聚合 |
+| GET | `/by-message-type` | 按消息类型（信封 `type`）聚合 |
+| GET | `/by-device` | 按设备聚合（Top N） |
+| GET | `/recent` | 最近日志明细（分页，支持事件类型 / 方向 / 设备 / 状态筛选） |

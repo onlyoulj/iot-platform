@@ -78,3 +78,21 @@
 - OTA 灰度组真落地：scope=灰度组 必带 group_id → 目标=分组子树∩产品，scope 落库「灰度组：{组名}」；解析优先级 group_id > device_names > 产品全量。
 - 前端：Devices.vue 分组树侧栏（虚拟根 全部/未分组 + el-tree，hover 编辑/删除）+ 点节点筛选（可关闭标签）+ 分组列 + 表单/批量移动 el-tree-select；OTA.vue 创建弹窗选「指定分组」出现必填目标分组树选 + 子树设备数提示。api.js：deviceGroupApi + deviceApi.batchGroup。
 - 种子在 init.js 末尾（设备种子之后）独立幂等块：3 大区+灰度验证组，按 DeviceName 归组（老库不匹配自动跳过）。
+
+## 数据大屏（2026-10-15）
+- 路由 /screen：meta.fullscreen=true（App.vue isFullscreenPage=public||fullscreen 走全屏布局）+ hidden + perm ['dashboard:view','stats:view']。
+- Screen.vue 三栏深色大屏，全复用现有接口：dashboard stats/trend/product-distribution/recent-alerts(?limit 新增,上限50)/recent-ota + mqtt-logs recent/overview；统计 10s、消息流 5s、时钟 1s 轮询，onUnmounted 清理。
+- 告警无缝滚动=内容×2 + translateY(-50%) CSS 动画（≤6条不滚）；消息流 event_type 中文映射 + device_name 回退 topic；mqtt_logs.status 是 'success' 不是 'ok'；stats:view 缺失时消息流降级占位。
+
+## 页脚（2026-10-15 优化）
+- 页脚不再走 API：vite.config.js define `__APP_FOOTER__`（启动/构建时读 server/config.json FOOTER_*），src/config/footer.js 导出 APP_FOOTER，App.vue 同步渲染；/api/system/footer 接口已删。改页脚=改 config.json 后重启 dev/重建。
+
+## 鉴权（2026-10-15 加密升级）
+- token：AES-256-GCM 密文（iv+tag+ciphertext 单段 base64url，~95 字符），密钥 sha256(AUTH_SECRET::aes-256-gcm)，GCM tag 防篡改；旧明文格式一律 401 重新登录。AUTH_SECRET 变更 = 全员掉线。
+- 在线心跳：authenticate 每请求 touchUserOnline（60s 节流）；前端 /auth/me 仅 4 分钟兜底心跳 + 页面不可见暂停/可见补跳。ONLINE_TTL 5 分钟。
+
+## 移动端 uni-app（2026-10-16）
+- mobile/ 目录独立 uni-app Vue3 项目（仅 H5 端已验证，dev:h5 端口 5174），后端地址**带 /api 前缀**，可选后端=「我的→服务器设置」切换（config/server.js + uni storage），CORS 后端全开可直连。
+- ⚠️ **版本铁律**：@dcloudio/* 全家桶精确锁 `3.0.0-alpha-4000120240201002` + vue/@vue/* `3.3.11` + vite `4.2.1` + pinia `2.0.36`，全部不带 ^。必须与本机 HBuilderX（D:\HBuilderX）自带编译器 uniapp-cli-vite 版本对齐——HBX 老编译器（2024-02，4.01）不重定向 `vue`→`@dcloudio/uni-h5-vue` 分叉包，项目装新版 @dcloudio 会报 `isInSSRComponentSetup/normalizeCssVarValue is not exported`。升级 HBX 后同步升项目依赖（以 HBX plugins/uniapp-cli-vite/node_modules 版本为准）。
+- ⚠️ vite.config 必须 `import * as uniModule` 显式取 `.default` 调用（CJS 互操作缺陷：默认导入拿到 module.exports 对象，vite 静默吞掉所有 uni 插件，症状=.vue 报 "Install @vitejs/plugin-vue"）。项目根必须有 index.html。
+- tabBar 图标零依赖生成：mobile/scripts/gen-icons.mjs（手写 PNG zlib+CRC）。UI 截图验证复用 cdp-shot.mjs（420x900 视口）；uni-input 内真实 input 填值、uni-button 点击。详见 memory/2026-10-16.md。

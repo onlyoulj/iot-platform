@@ -10,15 +10,19 @@
 
 | 模块 | 页面 | 能力 | 权限点 |
 | --- | --- | --- | --- |
-| 登录 | `/login` | 用户名密码登录、token 会话 | 公开 |
-| 仪表盘 | `/dashboard` | 设备/固件/告警总览、在线趋势、产品分布 | `dashboard:view` |
-| 设备管理 | `/devices` | 增删查、批量删除、**一键生成固件订阅链接** | `device:view` |
-| 产品管理 | `/product` | 产品模型创建与编辑 | `product:view` |
-| 固件管理 | `/firmware` | 上传（含 MD5 校验）、发布、废弃、批量删除 | `firmware:view` |
-| OTA 升级 | `/ota` | 任务创建、暂停/恢复/取消、进度追踪、失败设备明细 | `ota:view` |
-| 告警中心 | `/alert` | 分级告警、筛选、处置流转、全部已读 | `alert:view` |
+| 登录 | `/login` | **登录与注册合一**（侧滑切换）、用户名密码登录、token 会话 | 公开 |
+| 仪表盘 | `/dashboard` | 设备/固件/告警总览、在线趋势、产品分布、**API / MQTT 数据汇总卡** | `dashboard:view` |
+| 设备管理 | `/devices` | 增删查、批量删除、一键订阅链接；**设备分组树**、详情抽屉（**指标趋势** / **远程控制** / **设备影子** / **生命周期时间轴**） | `device:view`（写需 `device:edit`） |
+| 产品管理 | `/product` | 产品模型创建与编辑、**物模型属性定义**（影子/历史数据源） | `product:view`（写需 `product:manage`） |
+| 固件管理 | `/firmware` | 上传（含 MD5 校验）、发布、废弃、批量删除 | `firmware:view`（写需 `firmware:manage`） |
+| OTA 升级 | `/ota` | 任务创建、暂停/恢复/取消、进度追踪、失败设备明细、灰度组 | `ota:view`（写需 `ota:manage`） |
+| 告警中心 | `/alert` | 三页签：告警列表 / **规则引擎** / **通知渠道** | `alert:view`（处置需 `alert:handle`） |
+| 数据大屏 | `/screen` | 全屏深色大屏，聚合统计、趋势、消息流（值班/演示） | `dashboard:view` 或 `stats:view` |
 | 用户管理 | `/users` | 用户增删改、重置密码、用户组分配 | `user:view`（写需 `user:manage`） |
 | 用户组权限 | `/groups` | 用户组与权限点管理 | `group:view`（写需 `group:manage`） |
+| API 统计 | `/stats` | API 调用量 / 错误率 / 慢请求 / Top 接口 | `stats:view` |
+| MQTT 监控 | `/mqtt-stats` | MQTT 收发趋势 / 通道 / 设备维度统计 | `stats:view` |
+| 系统管理 | `/system` | 系统配置（热更新）、运行信息、离线扫描 | `system:manage` |
 
 ---
 
@@ -231,7 +235,7 @@ iot-platform/
 │   │   ├── clipboard.js       # 剪贴板复制（HTTP 环境自动降级）
 │   │   ├── format.js          # 格式化工具
 │   │   └── icons.js           # 图标按需注册
-│   ├── views/                 # 业务页面
+│   ├── views/                 # 业务页面（含 Screen.vue 数据大屏；Devices/Product/Alert 含详情抽屉与弹窗能力）
 │   └── assets/style.css       # 全局样式
 ├── server/                    # Express 后端
 │   ├── index.js               # 服务入口
@@ -241,8 +245,23 @@ iot-platform/
 │   │   └── auth-schema.js     # 权限点定义 + 口令哈希 + 用户组/用户种子
 │   ├── services/
 │   │   ├── auth.js           # 鉴权中间件 + token + 权限查询
-│   │   └── push.js           # SSE 连接表与升级指令推送
-│   └── routes/                # 业务路由（auth/users/groups/dashboard/device/firmware/ota/product/alert/subscribe）
+│   │   ├── config-store.js   # 系统配置持久化（config.json + env 同步 + 脱敏）
+│   │   ├── redis.js          # Redis 双连接 + 全操作降级
+│   │   ├── push.js           # SSE 连接表与升级指令推送
+│   │   ├── mqtt.js           # EMQX 双通道（长连接 + REST API）降级
+│   │   ├── mqtt-logger.js    # MQTT 全生命周期日志
+│   │   ├── mqtt-repush.js    # 设备上线补推积压升级任务
+│   │   ├── device-info.js    # 设备信息上报归一化
+│   │   ├── device-monitor.js # 离线扫描（分布式锁）
+│   │   ├── device-metrics.js # 指标历史双写 + 降采样
+│   │   ├── device-control.js # 远程控制指令下发与回执
+│   │   ├── device-groups.js  # 设备分组树
+│   │   ├── thing-model.js    # 物模型 + 设备影子
+│   │   ├── alert-engine.js   # 告警规则引擎
+│   │   ├── alert-notify.js   # 告警通知渠道推送
+│   │   ├── api-logger.js     # API 调用日志
+│   │   └── user-activity.js  # 用户行为日志 + 在线心跳
+│   └── routes/                # 业务路由（14 组：auth/users/groups/dashboard/devices/firmware/ota/product/alert/subscribe/stats/system/mqtt/mqtt-logs）
 └── docs/                      # 项目文档
 ```
 

@@ -15,7 +15,7 @@ export const dashboardApi = {
   /** 产品设备分布 */
   getProductDistribution: () => request.get('/dashboard/product-distribution'),
   /** 最新告警 */
-  getRecentAlerts: () => request.get('/dashboard/recent-alerts'),
+  getRecentAlerts: (limit) => request.get('/dashboard/recent-alerts', limit ? { limit } : undefined),
   /** 最近 OTA 任务 */
   getRecentOTA: () => request.get('/dashboard/recent-ota'),
 }
@@ -219,8 +219,6 @@ export const mqttLogApi = {
 
 /* ============================ 系统管理 ============================ */
 export const systemApi = {
-  /** 页脚信息（公开接口，无需登录）：{ text, company, icp, contact } */
-  getFooter: () => request.get('/system/footer'),
   /** 读取配置（敏感值脱敏）：{ values, meta, configFile } */
   getConfig: () => request.get('/system/config'),
   /** 修改配置：{ changed, restartRequired, values } */

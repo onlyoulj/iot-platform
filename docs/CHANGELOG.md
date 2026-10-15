@@ -1,5 +1,32 @@
 # 文档变更说明
 
+> 文档集随功能迭代持续更新，在线文档以本目录 `.md` 为准。
+
+---
+
+## 2026-10-15 功能迭代（文档同步）
+
+平台新增 9 项功能，本日同步更新 `API.md` / `ARCHITECTURE.md` / `README.md` / `INTEGRATION.md` 与本文档索引，使在线文档与代码现状一致。
+
+| 功能 | 涉及文档 / 章节 | 关键接口 |
+| --- | --- | --- |
+| 设备分组（树） | API.md §2.1、ARCHITECTURE §4/§6、README 功能概览 | `/api/device-groups` |
+| 指标趋势图 | API.md §2.2、INTEGRATION §2.7 | `GET /api/devices/:id/metrics` |
+| 远程控制面板 | API.md §2.2、INTEGRATION §四 | `POST /api/devices/:id/command` |
+| 物模型 / 设备影子 | API.md §2.2/§5.1、ARCHITECTURE §7.6 | `/shadow*`、`/properties` |
+| 自定义属性历史 | API.md §2.2 | `GET /api/devices/:id/props-history` |
+| 生命周期时间轴 | API.md §2.2 | `GET /api/devices/:id/timeline` |
+| 告警规则引擎 | API.md §6.1、ARCHITECTURE §7.6 | `/api/alerts/rules` |
+| 告警通知渠道 | API.md §6.2、INTEGRATION §2.7 | `/api/alerts/channels` |
+| 数据大屏 | API.md §12–§15、ARCHITECTURE §3 前端模块 | `/screen` + `/stats`/`/mqtt-logs` |
+| 登录注册合一 | ARCHITECTURE §3 前端模块、README 功能概览 | `/login` 内状态切换 |
+
+> 权限点仍为 18 个（未新增）；服务数 17 个、路由组 14 组，均已同步至 ARCHITECTURE.md §4 / §5.3。
+
+---
+
+## 2026-10-13 系统性重整（历史）
+
 > 本轮对 `docs/` 目录全部 Markdown 文档做了一次系统性重整，并新增了接入指南。
 > 日期：2026-10-13
 

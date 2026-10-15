@@ -31,20 +31,6 @@ import { scanOfflineDevices, offlineTimeout } from '../services/device-monitor.j
 
 const router = Router();
 
-/* ============================ 公开接口：页脚信息 ============================ */
-// 注册在 authenticate 之前，无需登录即可访问（页脚在所有页面展示）
-router.get('/footer', (req, res) => {
-  res.json({
-    code: 0,
-    data: {
-      text: getConfig('FOOTER_TEXT') || '',
-      company: getConfig('FOOTER_COMPANY') || '',
-      icp: getConfig('FOOTER_ICP') || '',
-      contact: getConfig('FOOTER_CONTACT') || '',
-    },
-  });
-});
-
 router.use(authenticate, requirePermission('system:manage'));
 
 /* ============================ 配置项元数据 ============================ */

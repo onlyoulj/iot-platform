@@ -140,6 +140,19 @@ curl http://localhost:3000/api/devices \
 
 > ⚠️ 生产环境务必通过 `AUTH_SECRET` 覆盖签名密钥并修改默认密码。注册功能可用 `AUTH_ALLOW_REGISTER=false` 关闭。
 
+### 2.7 管理端新增能力（2026-10-15）
+
+| 能力 | 页面 / 接口 | 说明 |
+| --- | --- | --- |
+| 设备分组 | `/devices` + `/api/device-groups` | 自引用分组树，设备列表按子树筛选，批量移动 |
+| 指标趋势 | 设备详情抽屉 `/api/devices/:id/metrics` | 电量/信号历史，可切 `1h`/`6h`/`24h`/`7d`/`30d` 时间轴 |
+| 远程控制 | `/api/devices/:id/command` | 经 MQTT 下行下发指令并跟踪回执（60s 超时） |
+| 设备影子 | `/api/devices/:id/shadow*` | 物模型期望值下发与上报态双态 |
+| 物模型 | `/product` + `/api/products/:id/properties` | 产品级属性定义，约束数值 / 枚举 |
+| 告警规则引擎 | `/alert` + `/api/alerts/rules` | 按电量 / 信号 / 离线自动评估生成告警（60s 扫描 + 冷却） |
+| 通知渠道 | `/api/alerts/channels` | 企微 / 钉钉 / 飞书 / webhook / email 推送告警 |
+| 数据大屏 | `/screen` | 全屏聚合展示，复用现有接口 |
+
 ---
 
 ## 三、设备侧接入流程
@@ -359,6 +372,18 @@ mosquitto_sub -h 129.204.31.17 -p 1883 \
 
 > 完整 MQTT 接入文档（含 mqtt.js/WSS/Python paho 示例、上报字段别名表、EMQX Serverless REST API 参考、排查清单）见 [MQTT.md](./MQTT.md)。
 
+### 设备侧控制指令与影子同步
+
+管理端通过 MQTT 下行通道对设备下发运维指令（`type` 区分），设备侧需按需订阅 `device/{id}/downlink` 并处理：
+
+| type | 场景 | 设备动作 |
+| --- | --- | --- |
+| `control` | 管理端远程控制（如 `reboot`） | 执行指令并回执 `control_ack`（含 `cmd_id`/`code`/`message`/`result`），平台据此推进指令状态 `sent→delivered→success/timeout` |
+| `shadow_set` | 管理端下发期望值（物模型） | 应用 `desired` 到本地，执行后上报 `shadow_report` 回写 `reported` |
+| `test` | 管理端「测试消息」按钮 | 连通性验证 |
+
+设备上报态：`device/{id}/uplink` 承载升级进度 / 心跳，`device/{id}/info` 承载设备信息（电量 / 信号 / MAC / 硬件 / 固件版本 / 经纬度，字段别名与归一化规则见 [MQTT.md](./MQTT.md) §5.3）；物模型属性上报后写入影子 `reported` 与属性历史。控制指令完整信封与回执格式见 [API.md](./API.md) §2.2。
+
 ---
 
 ## 五、接口速查（管理端）
@@ -382,6 +407,10 @@ mosquitto_sub -h 129.204.31.17 -p 1883 \
 | 系统 | `/api/system` | `system:manage` | `system:manage` | `GET /config` `PUT /config` `GET /info` `/scan-offline` |
 | 健康检查 | `/api/health` | 公开 | — | `GET /` |
 | 页脚 | `/api/system/footer` | 公开 | — | `GET /` |
+| 设备运维 | `/api/devices/:id` | `device:view` | `device:edit` | `/metrics` `/commands` `/command` `/shadow*` `/props-history` `/timeline` `/info` |
+| 物模型 | `/api/products/:id/properties` | `product:view` | `product:manage` | `GET` / `POST` / `PUT` / `DELETE` |
+| 告警规则 | `/api/alerts/rules` | `alert:view` | `alert:handle` | `GET` / `POST` / `PUT` / `DELETE` / `test` |
+| 通知渠道 | `/api/alerts/channels` | `alert:view` | `alert:handle` | `GET` / `types` / `POST` / `PUT` / `DELETE` / `test` |
 
 > ⚠️ 权限点**不存在** `device:manage`；MQTT 写操作用 `['ota:manage','device:edit']`（满足其一即可）。
 

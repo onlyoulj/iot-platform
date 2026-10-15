@@ -10,6 +10,7 @@
 import {
   ArrowDown,
   Bell,
+  ArrowRight,
   Box,
   Cellphone,
   Check,
@@ -17,6 +18,7 @@ import {
   CircleClose,
   Cloudy,
   Connection,
+  DataBoard,
   CopyDocument,
   Cpu,
   Delete,
@@ -57,6 +59,7 @@ import {
 /** 项目实际使用的图标集合 */
 export const ICONS = {
   ArrowDown,
+  ArrowRight,
   Bell,
   Box,
   Cellphone,
@@ -65,6 +68,7 @@ export const ICONS = {
   CircleClose,
   Cloudy,
   Connection,
+  DataBoard,
   CopyDocument,
   Cpu,
   Delete,

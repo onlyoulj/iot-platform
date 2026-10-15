@@ -1,0 +1,73 @@
+{
+  "pages": [
+    {
+      "path": "pages/login/login",
+      "style": {
+        "navigationBarTitleText": "登录",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/dashboard/dashboard",
+      "style": {
+        "navigationBarTitleText": "概览"
+      }
+    },
+    {
+      "path": "pages/devices/devices",
+      "style": {
+        "navigationBarTitleText": "设备",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/devices/detail",
+      "style": {
+        "navigationBarTitleText": "设备详情"
+      }
+    },
+    {
+      "path": "pages/alerts/alerts",
+      "style": {
+        "navigationBarTitleText": "告警",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/profile/profile",
+      "style": {
+        "navigationBarTitleText": "我的"
+      }
+    },
+    {
+      "path": "pages/profile/server",
+      "style": {
+        "navigationBarTitleText": "服务器设置"
+      }
+    },
+    {
+      "path": "pages/profile/password",
+      "style": {
+        "navigationBarTitleText": "修改密码"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "IoT",
+    "navigationBarBackgroundColor": "#2b6de8",
+    "backgroundColor": "#f5f6fa"
+  },
+  "tabBar": {
+    "color": "#8a8f99",
+    "selectedColor": "#2b6de8",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/dashboard/dashboard", "text": "概览", "iconPath": "static/tab/home.png", "selectedIconPath": "static/tab/home-on.png" },
+      { "pagePath": "pages/devices/devices", "text": "设备", "iconPath": "static/tab/device.png", "selectedIconPath": "static/tab/device-on.png" },
+      { "pagePath": "pages/alerts/alerts", "text": "告警", "iconPath": "static/tab/alert.png", "selectedIconPath": "static/tab/alert-on.png" },
+      { "pagePath": "pages/profile/profile", "text": "我的", "iconPath": "static/tab/user.png", "selectedIconPath": "static/tab/user-on.png" }
+    ]
+  }
+}
