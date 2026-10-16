@@ -38,6 +38,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import { authApi } from '../../utils/api'
 import { getServerLabel } from '../../config/server'
 
@@ -45,6 +46,18 @@ const mode = ref('login')
 const loading = ref(false)
 const form = ref({ username: '', password: '', nickname: '' })
 const serverLabel = computed(() => getServerLabel())
+
+// 已登录用户（凭证持久化）落在登录页时自动回到概览，并顺带静默刷新资料
+onLoad(() => {
+  if (uni.getStorageSync('token')) {
+    uni.reLaunch({ url: '/pages/dashboard/dashboard' })
+    import('../../utils/api').then(({ authApi: api }) => {
+      api.me({ silent: true }).then((p) => {
+        if (p) uni.setStorageSync('user', p)
+      }).catch(() => {})
+    })
+  }
+})
 
 function saveSession(data) {
   uni.setStorageSync('token', data.token)

@@ -16,9 +16,9 @@
           <text class="hs-num">{{ product.device_count ?? 0 }}</text>
           <text class="hs-lbl">接入设备</text>
         </view>
-        <view class="hs-item">
-          <text class="hs-num">{{ product.firmware_count ?? 0 }}</text>
-          <text class="hs-lbl">固件</text>
+        <view class="hs-item" @click="goFirmware">
+          <text class="hs-num link">{{ product.firmware_count ?? 0 }}</text>
+          <text class="hs-lbl">固件 ›</text>
         </view>
         <view class="hs-item">
           <text class="hs-num">{{ product.online_rate ?? 0 }}%</text>
@@ -209,6 +209,12 @@ function goDevice(d) {
   uni.navigateTo({ url: `/pages/devices/detail?id=${d.id}` })
 }
 
+/** 点击「固件」统计 → 跳固件管理页（按产品名筛选） */
+function goFirmware() {
+  if (!product.value?.name) return
+  uni.navigateTo({ url: `/pages/firmware/firmware?product=${encodeURIComponent(product.value.name)}` })
+}
+
 function modeText(mode) {
   return mode === 'r' ? '只读' : mode === 'w' ? '只写' : '读写'
 }
@@ -277,6 +283,9 @@ function modeText(mode) {
   color: #ffffff;
   font-size: 36rpx;
   font-weight: 700;
+}
+.hs-item {
+  cursor: pointer;
 }
 .hs-lbl {
   color: rgba(255, 255, 255, 0.8);

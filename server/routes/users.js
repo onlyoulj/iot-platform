@@ -26,6 +26,7 @@ import { dirname } from 'path';
 import db from '../db/index-core.js';
 import { hashPassword } from '../db/auth-schema.js';
 import { authenticate, requirePermission, findUserById, buildAuthProfile } from '../services/auth.js';
+import { putFile, deleteFile } from '../services/storage.js';
 import { getOnlineUserIds, ACTION_LABELS } from '../services/user-activity.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -415,7 +416,7 @@ const AVATAR_MIME = {
 };
 const AVATAR_MAX_SIZE = 5 * 1024 * 1024; // 5MB
 
-/** multer 内存存储：头像小文件，校验通过后写入 uploads/avatars */
+/** multer 内存存储：头像小文件，校验通过后写入存储层（本机或 OSS） */
 const avatarUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: AVATAR_MAX_SIZE },
@@ -426,18 +427,18 @@ const avatarUpload = multer({
  * POST /api/users/avatar —— 用户上传自己的头像
  * multipart/form-data，字段名 file；成功后旧头像文件被删除，返回新的 avatar_url。
  */
-router.post('/avatar', avatarUpload.single('file'), (req, res) => {
+router.post('/avatar', avatarUpload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ code: 400, message: '请上传图片文件（jpg/png/gif/webp，≤5MB）' });
   }
   const ext = AVATAR_MIME[req.file.mimetype] || '.jpg';
   const filename = `u${req.user.id}-${Date.now()}${ext}`;
-  fs.writeFileSync(join(AVATAR_DIR, filename), req.file.buffer);
+  await putFile('avatars', filename, req.file.buffer);
 
   // 删除旧头像文件（失败不阻塞：文件可能已被手动清理）
   const old = db.prepare('SELECT avatar FROM users WHERE id = ?').get(req.user.id)?.avatar;
   if (old) {
-    try { fs.unlinkSync(join(AVATAR_DIR, old)); } catch { /* 旧文件不存在则忽略 */ }
+    await deleteFile('avatars', old);
   }
 
   db.prepare('UPDATE users SET avatar = ? WHERE id = ?').run(filename, req.user.id);

@@ -1,0 +1,24 @@
+appname=iot-platform
+version=1.0.0
+display_name=IoT 物联网平台
+desc=IoT 物联网管理平台：设备管理、固件与 OTA 升级、告警中心、系统公告。内置管理端 Web 控制台（桌面图标直接打开），移动端 H5 可通过 http://<NAS地址>:3210/m/ 访问。
+source=thirdparty
+platform=all
+
+maintainer=aurora0
+maintainer_url=
+
+os_min_version=1.2.0
+
+# 运行时依赖：Node.js 22（飞牛官方运行时包）
+install_dep_apps=nodejs_v22
+
+# 服务端口（对外开放，管理端与 API 同端口）
+service_port=3210
+ctl_stop=true
+checkport=true
+
+desktop_uidir=ui
+desktop_applaunchname=iot-platform.main
+
+changelog=1.0.0 首个版本：设备/固件/OTA/告警/公告全功能，内置管理端。

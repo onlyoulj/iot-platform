@@ -1,0 +1,10 @@
+/* 全局样式（main.js 引入，作用于所有页面） */
+
+/* 概览页下拉刷新：限制最大拉伸高度。
+   当前 uni-h5 版本不支持 scroll-view 的 refresher-max-height 属性，
+   内部下拉位移无上限，这里用 CSS 钳制 refresher 视觉高度；
+   超过后视觉封顶，松手仍按 refresher-threshold 判断是否触发刷新。 */
+uni-scroll-view .uni-scroll-view-refresher {
+  max-height: 120px;
+  overflow: hidden;
+}

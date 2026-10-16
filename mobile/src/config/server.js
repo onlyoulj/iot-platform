@@ -8,12 +8,19 @@
 const STORAGE_KEY = 'iot_server_base_url'
 
 // 开发默认：本机后端 3000（真机调试时请改为电脑局域网 IP）
-const DEFAULT_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'
+// App 套壳（Android WebView）内没有 localhost 概念，默认指向开发机局域网地址；
+// 用户可在「我的 → 服务器设置」随时切换，选择持久化到本地。
+const isAppPlatform = typeof uni !== 'undefined' && /html5plus|unicast/i.test(
+  typeof navigator !== 'undefined' ? navigator.userAgent : ''
+)
+const DEV_DEFAULT = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'
+const APP_DEFAULT = 'http://192.168.0.88:3000/api'
+const DEFAULT_BASE_URL = isAppPlatform ? APP_DEFAULT : DEV_DEFAULT
 
 /** 预置可选后端（地址含 /api 前缀） */
 export const PRESET_SERVERS = [
+  { label: '局域网（本电脑）', url: 'http://192.168.0.88:3000/api' },
   { label: '本机开发', url: 'http://localhost:3000/api' },
-  { label: '局域网', url: 'http://192.168.1.100:3000/api' },
 ]
 
 export function getDefaultBaseUrl() {

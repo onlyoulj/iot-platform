@@ -181,6 +181,8 @@ Devices.vue
 | `routes/` | 业务路由 **14 组**：`auth` `users` `groups` `dashboard` `devices` `firmware` `ota` `product` `alert` `subscribe` `stats` `system` `mqtt` `mqtt-logs` |
 | `services/auth.js` | token 签发与校验、用户/权限查询、`authenticate` / `optionalAuth` / `requirePermission` 中间件 |
 | `services/config-store.js` | `config.json` 持久化 + process.env 同步 + 脱敏（**必须第一个 import**） |
+| `services/storage.js` | 统一文件存储抽象：`STORAGE_MODE=local`（本机 `server/uploads/`）或 `oss`（MinIO/S3 兼容，`MINIO_*` 配置）；固件/头像的存取删除统一走此层 |
+| `services/storage-urls.js` | 固件下载 URL 构造（`download_url` 鉴权入口 + `/uploads/...` 直链），两种存储模式下 URL 形式一致 |
 | `services/redis.js` | 双连接（client + subscriber）+ 优雅降级 + 重连升格 |
 | `services/push.js` | SSE 连接表 + Redis Pub/Sub 多实例推送 |
 | `services/mqtt.js` | EMQX 双通道（长连接 + REST API）自动降级 |

@@ -79,6 +79,15 @@
                 :active-value="'true'"
                 :inactive-value="'false'"
               />
+              <!-- 下拉选择 -->
+              <el-select v-else-if="item.type === 'select'" v-model="form[item.key]" style="width: 100%">
+                <el-option
+                  v-for="opt in item.options || []"
+                  :key="opt.value"
+                  :value="opt.value"
+                  :label="opt.label"
+                />
+              </el-select>
               <!-- 数字 -->
               <el-input-number
                 v-else-if="item.type === 'number'"

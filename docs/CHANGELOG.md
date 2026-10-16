@@ -4,6 +4,53 @@
 
 ---
 
+## 2026-10-16 系统公告功能（新增接口，API.md §17）
+
+新增系统公告模块：发布、修改、删除、按用户已读。**新增权限点** `announcement:view`（各内置组已自动补齐）/ `announcement:manage`（超管），数据库新增 `announcements` + `announcement_reads` 表（老库启动自动建表 + 补种子 2 条示例公告）。
+
+| 接口 | 说明 |
+| --- | --- |
+| `GET /api/announcements` | 列表（分页 + 已读状态 + 未读数），非管理员仅见启用公告 |
+| `GET /api/announcements/unread` | 未读数（顶栏红点） |
+| `GET /api/announcements/:id` | 详情（查看即已读） |
+| `POST /api/announcements` | 发布（`announcement:manage`） |
+| `PUT /api/announcements/:id` | 修改（标题/内容/级别/启用） |
+| `DELETE /api/announcements/:id` | 删除（批量，级联清已读） |
+| `POST /api/announcements/:id/read` | 标记已读（幂等，`?all=1` 全部） |
+
+管理前端新增公告管理页与顶栏公告铃铛（未读红点 + 弹层阅读）；移动端新增公告列表/详情与已读标记。文档见 API.md §17。
+
+---
+
+## 2026-10-16 API.md 全面重整
+
+对照 `server/routes/` 全部 15 组路由逐一核对代码，重写 `API.md`，修正过时表述并补齐缺失接口（不改任何接口本身）：
+
+- **补齐缺失接口**：`/api/users` 的在线统计 `/online`、行为日志 `/activities`（+ labels / `/:id/activities`）；`/api/subscribe` 的 `POST /:key/info`（设备信息 HTTP 兜底入口）与订阅响应中的 `pending_upgrades` / `mqtt` 字段。
+- **修正过时内容**：登录示例密码改为种子账号真实值（`Admin@123`）并列出三组种子账号；`/logout` 鉴权标注纠正为需登录；注册 password 标记为必填、补充 409/403 错误场景；固件删除补「联动删除存储文件」；响应码表补 `409`。
+- **新增章节**：§16 文件访问 `/uploads/*`（本机静态直出 / OSS 代理回源两种模式，URL 不变）；各模块补存储改造后的行为说明（固件 file_path / 头像 avatar_url 语义）。
+- **补充细节**：OTA 三层下发通道（SSE / MQTT / REST 降级）与 MQTT 上线补推；设备信息归一化与心跳规则；系统配置脱敏键全量清单；告警归属过滤口径。
+
+---
+
+## 2026-10-16 后端存储系统改造（本机 / OSS 可选）
+
+在不改变任何现有 API 接口与响应结构的前提下，把固件包与用户头像的存储抽象为统一存储层 `services/storage.js`，支持两种模式（`config.json` → `STORAGE_MODE`，改后需重启）：
+
+| 模式 | 说明 |
+| --- | --- |
+| `local`（默认） | 本机磁盘 `server/uploads/`，行为与历史版本完全一致 |
+| `oss` | MinIO / S3 兼容对象存储（`MINIO_ENDPOINT` / `MINIO_BUCKET` / `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` 等配置，见 `docs/minio.md`） |
+
+兼容性约定（关键设计）：
+
+- 数据库 `firmwares.file_path` / `users.avatar` 字段含义不变，仍是文件名（相对 key），两种模式可随时切换，无需数据迁移；
+- 对外 URL 全部保持 `/uploads/firmware/...`、`/uploads/avatars/...` 形式。oss 模式下由后端 `/uploads/:category/:filename` 代理路由流式回源对象存储，前端与设备端完全无感知；本机目录仍作为兜底先于代理命中（旧文件继续可下载）；
+- 固件上传改为服务端内存缓冲后写入存储层，不向客户端暴露任何 OSS 凭证；删除固件时会同步删除存储层中的文件；
+- 设备侧鉴权下载入口 `/api/subscribe/:key/download` 与订阅 payload 的 `file_available` / `download_url` / `direct_url` 语义不变，`file_available` 现按存储层探测。
+
+---
+
 ## 2026-10-16 设备归属 / 用户积分 / 用户头像（文档同步）
 
 在不破坏既有接口契约的前提下完成三项扩展：所有改动均为**新增字段与新增接口**，既有调用方无需修改。

@@ -57,6 +57,12 @@ const routes = [
     meta: { title: '告警中心', icon: 'Bell', perm: 'alert:view' },
   },
   {
+    path: '/announcements',
+    name: 'Announcements',
+    component: () => import('@/views/Announcements.vue'),
+    meta: { title: '系统公告', icon: 'ChatDotRound', perm: 'announcement:view' },
+  },
+  {
     path: '/api-guide',
     name: 'ApiGuide',
     component: () => import('@/views/ApiGuide.vue'),

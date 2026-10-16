@@ -1,16 +1,16 @@
 {
   "pages": [
     {
+      "path": "pages/dashboard/dashboard",
+      "style": {
+        "navigationBarTitleText": "概览"
+      }
+    },
+    {
       "path": "pages/login/login",
       "style": {
         "navigationBarTitleText": "登录",
         "navigationStyle": "custom"
-      }
-    },
-    {
-      "path": "pages/dashboard/dashboard",
-      "style": {
-        "navigationBarTitleText": "概览"
       }
     },
     {
@@ -44,6 +44,45 @@
       "style": {
         "navigationBarTitleText": "告警",
         "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/alerts/detail",
+      "style": {
+        "navigationBarTitleText": "告警详情"
+      }
+    },
+    {
+      "path": "pages/announcements/announcements",
+      "style": {
+        "navigationBarTitleText": "系统公告",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/announcements/detail",
+      "style": {
+        "navigationBarTitleText": "公告详情"
+      }
+    },
+    {
+      "path": "pages/firmware/firmware",
+      "style": {
+        "navigationBarTitleText": "固件",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/ota/ota",
+      "style": {
+        "navigationBarTitleText": "OTA 升级",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/ota/detail",
+      "style": {
+        "navigationBarTitleText": "任务详情"
       }
     },
     {

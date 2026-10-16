@@ -1,0 +1,10 @@
+#!/bin/bash
+# 安装后：确保运行目录与依赖就绪（main start 时也会兜底）
+export PATH=/var/apps/nodejs_v22/target/bin:$PATH
+APP_DIR="${TRIM_APPDEST}/app/server"
+VAR_DIR="${TRIM_PKGVAR}"
+mkdir -p "$VAR_DIR/db" "$VAR_DIR/uploads/firmware" "$VAR_DIR/uploads/avatars"
+if [ -f "$VAR_DIR/config.json" ] && [ ! -e "$APP_DIR/config.json" ]; then
+  ln -s "$VAR_DIR/config.json" "$APP_DIR/config.json"
+fi
+exit 0

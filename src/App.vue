@@ -50,6 +50,12 @@
               </el-badge>
             </el-tooltip>
 
+            <el-tooltip content="系统公告" placement="bottom">
+              <el-badge :value="annUnread" :max="99" :hidden="!annUnread" class="notice-badge">
+                <el-icon :size="20" @click="goAnnouncements"><ChatDotRound /></el-icon>
+              </el-badge>
+            </el-tooltip>
+
             <el-dropdown trigger="click" @command="handleUserCommand">
               <div class="user-entry">
                 <el-avatar :size="32" :src="avatarUrl || undefined" class="user-avatar">
@@ -156,7 +162,7 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
-import { alertApi, authApi, userApi } from '@/utils/api'
+import { alertApi, announcementApi, authApi, userApi } from '@/utils/api'
 import request from '@/utils/request'
 import { APP_FOOTER } from '@/config/footer'
 import { ElMessage } from '@/utils/element'
@@ -320,6 +326,28 @@ async function handleChangePassword() {
 
 /* ---------------- 告警角标 ---------------- */
 
+/* ---------------- 公告角标 ---------------- */
+
+const annUnread = ref(0)
+
+async function loadAnnUnread() {
+  if (!hasPermission('announcement:view')) return
+  try {
+    const data = await announcementApi.unread()
+    annUnread.value = data?.unread ?? 0
+  } catch {
+    annUnread.value = 0
+  }
+}
+
+function goAnnouncements() {
+  if (!hasPermission('announcement:view')) {
+    ElMessage.warning('无权访问系统公告')
+    return
+  }
+  if (route.path !== '/announcements') router.push('/announcements')
+}
+
 async function loadUnread() {
   if (!hasPermission('alert:view')) return
   try {
@@ -341,7 +369,10 @@ const footerItems = [
 
 // 登录页不展示角标；登录后进入受保护页面时再拉取
 watch(isPublicPage, (isPublic) => {
-  if (!isPublic) loadUnread()
+  if (!isPublic) {
+    loadUnread()
+    loadAnnUnread()
+  }
 })
 
 /* ---------------- 在线心跳 ---------------- */
@@ -386,7 +417,10 @@ const handleResize = debounce(() => {
 }, 200)
 
 onMounted(() => {
-  if (!isPublicPage.value) loadUnread()
+  if (!isPublicPage.value) {
+    loadUnread()
+    loadAnnUnread()
+  }
   if (isLoggedIn.value) startHeartbeat()
   window.addEventListener('resize', handleResize)
   document.addEventListener('visibilitychange', handleVisibilityChange)

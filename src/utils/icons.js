@@ -10,6 +10,7 @@
 import {
   ArrowDown,
   Bell,
+  ChatDotRound,
   ArrowRight,
   Box,
   Cellphone,
@@ -61,6 +62,7 @@ export const ICONS = {
   ArrowDown,
   ArrowRight,
   Bell,
+  ChatDotRound,
   Box,
   Cellphone,
   Check,

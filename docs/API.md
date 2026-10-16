@@ -1,8 +1,9 @@
 # 接口契约
 
 - **Base URL**：`http://localhost:3000/api`（前端开发环境经 Vite 代理为 `/api`）
-- **数据格式**：`application/json`，固件上传为 `multipart/form-data`
+- **数据格式**：`application/json`；固件上传与头像上传为 `multipart/form-data`
 - **字段命名**：`snake_case`
+- 文件存储（固件包 / 头像）支持本机与 MinIO OSS 两种模式，详见第 16 节与 [minio.md](./minio.md)
 
 ## 统一响应结构
 
@@ -17,18 +18,22 @@
 | `401` | 未登录 / token 失效 |
 | `403` | 无权限 / 账号禁用 |
 | `404` | 资源不存在 |
+| `409` | 资源冲突（如用户名已注册） |
 | `500` | 服务端异常 |
 
 `code !== 0` 时 `message` 为可直接展示给用户的错误文案。前端 `request.js` 已统一解包 `data` 并抛出异常。
+
+> 例外：设备侧接口（第 8 节 `/api/subscribe`）同时使用真实 HTTP 状态码（403 / 404），
+> 便于嵌入式端按状态码分支处理；响应体仍保持 `{ code, message, data }` 结构。
 
 ## 鉴权说明
 
 | 调用方 | 鉴权方式 | 标识 |
 | --- | --- | --- |
 | 管理端 | `Authorization: Bearer <token>` | 除 `/api/auth/login`、`/api/auth/register` 外，所有管理端接口需登录 |
-| 设备侧 | `?token=<HMAC>` | `/api/subscribe/:key`、`/:key/download`、`/:key/events`、`/:key/report` |
+| 设备侧 | `?token=<HMAC>` | `/api/subscribe/:key`、`/:key/download`、`/:key/events`、`/:key/report`、`/:key/info` |
 
-下文各业务模块用「**鉴权**」行标注所需权限点；未列权限点的接口仅要求登录。设备侧接口（第 7 节）使用订阅 token，不走管理端会话。
+下文各业务模块用「**鉴权**」行标注所需权限点；未列权限点的接口仅要求登录。设备侧接口使用订阅 token，不走管理端会话。
 
 ---
 
@@ -128,7 +133,7 @@
 | `created_at` | datetime | 创建时间 |
 | `props` | array | 实时属性 `[{ name, value, updated }]` |
 
-**GET `/stats` → `data`**（本轮新增）
+**GET `/stats` → `data`**
 
 ```json
 { "total": 7, "online": 5, "offline": 1, "inactive": 1 }
@@ -161,9 +166,7 @@
 
 **批量删除 `DELETE /:id`**：`id` 支持逗号分隔；普通用户仅能删除自己归属的设备，所选设备全部越权时返回 `403 无权删除所选设备`。
 
----
-
-## 2.1 设备分组 `/api/device-groups`
+### 2.1 设备分组 `/api/device-groups`
 
 **鉴权**：读要求 `device:view`，写要求 `device:edit`。分组为自引用树（`parent_id` 指向父分组，顶层为 `null`），删除分组时其子分组与组内设备自动上移到父分组（父为空则未分组）。
 
@@ -209,7 +212,7 @@
 { "command": "reboot", "params": { "delay": 3 } }
 ```
 
-`params` 缺省 `{}`。响应 `data`: `{ cmd_id, delivered, topics }`；`delivered=true` 表示已通过 MQTT 下行（或 REST API 降级）送达。`device_control_logs` 记录每条指令，状态 `sent → delivered → success / failed / timeout`：设备回执 `control_ack` 后推进，60s 内未回执由扫描任务置 `timeout`。
+`params` 缺省 `{}`。响应 `data`: `{ cmd_id, delivered, topics }`；`delivered=true` 表示已通过 MQTT 下行（或 REST API 降级）送达（送达失败时业务 code 为 `500`）。`device_control_logs` 记录每条指令，状态 `sent → delivered → success / failed / timeout`：设备回执 `control_ack` 后推进，60s 内未回执由扫描任务置 `timeout`。
 
 **GET `/:id/commands` → `data`**：`[{ cmd_id, command, params, status, result, operator, created_at, acked_at }]`（`limit` 默认 50，夹 1–200）。
 
@@ -221,13 +224,13 @@
 
 **GET `/:id/timeline` → `data`**：`[{ type, status, title, detail, time }]`，`type ∈ alert / command / upgrade / mqtt / shadow / lifecycle`。聚合告警、控制日志、升级任务、MQTT 日志、影子变更与创建/激活事件，`limit` 默认 100（夹 1–300）。
 
-**POST `/:id/info` 请求体**：`{ battery, signal, mac, hardware_version, firmware_version, longitude, latitude, location }`，字段均可选、仅更新提供的字段。归一化：电量 `0–1` 小数 ×100 得百分比；信号质量 `%` → dBm；经纬度越界丢弃；上报视为在线心跳（`fault` 保持）。设备侧主通道为 MQTT `device/{id}/info` 或订阅接口 `POST /api/subscribe/:key/info`（见 §7 与 [INTEGRATION.md](./INTEGRATION.md)）。
+**POST `/:id/info` 请求体**：`{ battery, signal, mac, hardware_version, firmware_version, longitude, latitude, location }`，字段均可选、仅更新提供的字段。归一化：电量 `0–1` 小数 ×100 得百分比；信号质量 `%` → dBm；经纬度越界丢弃；上报视为在线心跳（`fault` 保持）。设备侧主通道为 MQTT `device/{id}/info` 或订阅接口 `POST /api/subscribe/:key/info`（见 §8 与 [INTEGRATION.md](./INTEGRATION.md)）。
 
 ---
 
 ## 3. 固件 `/api/firmware`
 
-**鉴权**：整组要求登录；读接口要求 `firmware:view`，上传/发布/废弃要求 `firmware:manage`。
+**鉴权**：整组要求登录；读接口要求 `firmware:view`，上传/发布/废弃/删除要求 `firmware:manage`。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -236,7 +239,7 @@
 | POST | `/upload` | 上传固件（multipart），需 `firmware:manage` |
 | POST | `/:id/publish` | 发布（仅 `draft` 可发布），需 `firmware:manage` |
 | POST | `/:id/deprecate` | 废弃，需 `firmware:manage` |
-| DELETE | `/:id` | 删除，支持逗号分隔批量，需 `firmware:manage` |
+| DELETE | `/:id` | 删除（联动删除存储文件），支持逗号分隔批量，需 `firmware:manage` |
 | GET | `/meta/products` | 产品下拉选项，需 `firmware:view` |
 
 **GET `/` 查询参数**：`search`（匹配 `name` / `version`）、`product`、`status`（`draft` / `published` / `deprecated`）、`page`、`pageSize`
@@ -250,6 +253,7 @@
 | `version` | string | 版本号（不含 `v` 前缀） |
 | `product_id` / `product_name` | - | 所属产品 |
 | `file_size` | string | 已格式化，如 `4.2 MB` |
+| `file_path` | string | 存储文件名（相对 key；本机 / OSS 模式含义一致，见第 16 节） |
 | `device_count` | number | 适配设备数 |
 | `status` | string | `draft` / `published` / `deprecated` |
 | `sign_algo` / `md5` | string | 签名算法与校验值 |
@@ -270,7 +274,7 @@
 | `desc` | | 更新说明 |
 | `sign_algo` | | `SHA256` / `MD5` / `none` |
 
-服务端自动计算 MD5 并生成 `package_name`，新固件初始状态为 `draft`。
+服务端自动计算 MD5 并生成 `package_name`，新固件初始状态为 `draft`。文件经统一存储层落盘（本机 `uploads/firmware/` 或 MinIO，取决于 `STORAGE_MODE`，接口行为不变）。
 
 ---
 
@@ -335,8 +339,11 @@
 3. 都不传：该产品下全部设备
 
 > **创建即下发**：`strategy=immediate` 时任务状态直接置 `running`，并为每台目标设备生成
-> `device_upgrade_jobs`（初始 `pending`），随后向**在线且有 SSE 长连接**的设备主动推送 `upgrade` 事件；
-> 离线设备 / 无长连接的在线设备的 job 保持 `pending`，待其下次订阅时由 `pending_upgrades` 补推。
+> `device_upgrade_jobs`（初始 `pending`），随后通过三层通道下发：
+> ① 在线且有 SSE 长连接的设备 → 主动推送 `upgrade` 事件（同步）；
+> ② 连接了 EMQX 的设备 → MQTT 下行 `device/{id}/downlink`（异步）；
+> ③ MQTT 客户端未就绪 → EMQX REST API 降级发布。
+> 离线设备的 job 保持 `pending`，待其下次订阅时由 `pending_upgrades` 补推（另有设备上线后延迟补推机制）。
 
 **GET `/:id/jobs` 响应**
 
@@ -425,14 +432,16 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 
 ## 6. 告警 `/api/alerts`
 
-**鉴权**：整组要求登录；读/处理接口要求 `alert:view`，处理告警额外要求 `alert:handle`。
+**鉴权**：整组要求登录；读/处理接口要求 `alert:view`，处理/删除告警额外要求 `alert:handle`。
+
+**归属口径**：`alerts` 无 owner 字段，经 `device_name` 关联设备归属——非管理员只看到自己归属设备的告警，管理员看全部。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/` | 列表（筛选 + 分页），需 `alert:view` |
 | GET | `/stats` | 统计，需 `alert:view` |
-| POST | `/:id/handle` | 处理告警，需 `alert:view` + `alert:handle` |
-| POST | `/read-all` | 全部标记已读，需 `alert:view` |
+| POST | `/:id/handle` | 处理告警，需 `alert:handle` |
+| POST | `/read-all` | 全部标记已读，需 `alert:handle` |
 | DELETE | `/clear` | 清空全部告警，需 `alert:handle` |
 | DELETE | `/:id` | 删除单条，需 `alert:handle` |
 
@@ -443,8 +452,8 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 | `search` | 模糊匹配 `content` / `device_name` |
 | `level` | `critical` / `major` / `minor` / `info` |
 | `status` | `unhandled` / `handling` / `handled` |
-| `startDate` | 起始日期 `YYYY-MM-DD`（新增） |
-| `endDate` | 结束日期 `YYYY-MM-DD`，含当日 23:59:59（新增） |
+| `startDate` | 起始日期 `YYYY-MM-DD` |
+| `endDate` | 结束日期 `YYYY-MM-DD`，含当日 23:59:59 |
 | `page` / `pageSize` | 分页 |
 
 **Alert 对象**
@@ -468,7 +477,7 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 ```
 
 **POST `/:id/handle` 请求体**：`{ "action": "确认" | "忽略" | "修复", "remark": "..." }`
-处理后 `status` 置为 `handled`、`handler` 置为 `管理员`、`read` 置为 `1`。
+处理后 `status` 置为 `handled`、`handler` 置为操作人、`read` 置为 `1`。
 
 ### 6.1 告警规则引擎 `/api/alerts/rules`
 
@@ -522,22 +531,112 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 
 ---
 
-## 7. 固件订阅 `/api/subscribe`
+## 7. 认证 `/api/auth`
+
+管理端登录会话接口。除 `/login`、`/register` 外的接口需登录。
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| POST | `/login` | 公开 | 登录，返回 token + 用户资料（含权限集） |
+| POST | `/register` | 公开 | 注册（开关 `AUTH_ALLOW_REGISTER`，默认归入 `viewer` 组） |
+| GET | `/me` | 登录 | 获取当前登录用户资料 |
+| POST | `/logout` | 登录 | 退出（无状态 token，仅前端清理） |
+| POST | `/password` | 登录 | 修改自己的密码 |
+| GET | `/permissions` | 登录 | 权限点字典（用户组配置页用） |
+
+**POST `/login`**
+
+请求体：
+
+```json
+{ "username": "admin", "password": "Admin@123" }
+```
+
+响应 `data`：
+
+```json
+{
+  "token": "<payload>.<hmac>",
+  "user": {
+    "id": 1,
+    "username": "admin",
+    "nickname": "平台管理员",
+    "email": "admin@iot.local",
+    "phone": "13800000001",
+    "avatar": "",
+    "avatar_url": "",
+    "points": 10,
+    "status": "active",
+    "group_id": 1,
+    "group_name": "超级管理员",
+    "group_code": "super_admin",
+    "permissions": ["dashboard:view", "device:view", "..."],
+    "last_login": "2026-10-13 00:30:00",
+    "created_at": "2026-10-12 18:00:00"
+  }
+}
+```
+
+内置种子账号：`admin / Admin@123`（超管）、`ops / Ops@12345`（运维）、`viewer / Viewer@123`（只读）。用户不存在与口令错误返回同一文案 `用户名或密码错误`，避免用户名枚举；账号禁用返回 `403 账号已被禁用`。
+
+**POST `/register`**
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `username` | 是 | 字母开头，字母/数字/下划线，3-20 位；重复返回 `409 该用户名已被注册` |
+| `password` | 是 | 6-32 位，至少含字母/数字/符号中的两种 |
+| `nickname` `email` `phone` | 否 | 邮箱/手机号格式校验 |
+
+未开放注册（`AUTH_ALLOW_REGISTER=false`）返回 `403`。新用户默认归入 `AUTH_DEFAULT_GROUP`（默认 `viewer`），初始积分 `10`，无头像（`avatar_url` 为空串，前端渲染默认头像）。注册成功直接返回 `{ token, user, default_group }`，前端可跳过登录页。
+
+**GET `/me`**
+
+返回当前登录用户资料（结构同 `/login` 的 `user`）。路由守卫刷新页面时调用，校验 token 有效性并拉取最新权限。
+
+**POST `/password`**
+
+请求体 `{ old_password, new_password }`。原密码错误返回 `400 原密码不正确`。修改成功后前端应清理会话跳登录页（原 token 仍有效，但语义上要求重新登录）。
+
+**GET `/permissions`**
+
+返回权限点字典数组，供用户组配置页渲染勾选框：
+
+```json
+[
+  { "key": "dashboard:view", "label": "仪表盘", "group": "基础" },
+  { "key": "device:view", "label": "设备查看", "group": "设备" }
+]
+```
+
+内置用户组与权限点完整清单见 [ARCHITECTURE.md](./ARCHITECTURE.md) §5.3。
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `AUTH_SECRET` | `iot-platform-auth-secret-change-me` | token 签名密钥，**生产环境务必覆盖** |
+| `AUTH_TOKEN_TTL` | `604800`（7 天） | token 有效期（秒） |
+| `AUTH_ALLOW_REGISTER` | `true` | 是否开放注册 |
+| `AUTH_DEFAULT_GROUP` | `viewer` | 新注册用户默认所属用户组 code |
+
+---
+
+## 8. 固件订阅 `/api/subscribe`
 
 面向**设备侧**的固件信息订阅接口。设备通过 HTTP 周期性拉取订阅地址，即可获取自身产品的
 最新固件信息：版本号、发布状态、文件大小、MD5、签名算法、更新说明、兼容型号与固件下载直链。
 
 | 方法 | 路径 | 调用方 | 说明 |
 | --- | --- | --- | --- |
-| GET | `/:key` | 设备端 | 订阅固件信息（设备轮询入口） |
-| GET | `/:key/link` | 管理端 | 一键生成订阅链接（设备页「订阅」按钮调用） |
+| GET | `/:key` | 设备端 | 订阅固件信息（设备轮询入口，兼激活/心跳/补推） |
+| GET | `/:key/link` | 管理端 | 一键生成订阅链接（需登录 + `device:view`） |
 | GET | `/:key/download` | 设备端 | 带鉴权的固件下载入口 |
+| GET | `/:key/events` | 设备端 | 升级指令实时推送（SSE） |
+| POST | `/:key/report` | 设备端 | 升级结果上报 |
+| POST | `/:key/info` | 设备端 | 设备信息上报（HTTP 兜底，不支持 MQTT 的设备用） |
 
 **路径参数 `:key`**：支持 **设备 ID**（如 `9`）或 **DeviceName / SN**（如 `led-light`、`GW-10001`），
 设备固件里通常写死 SN，直接用它订阅即可。
-
-> 与其余接口不同，本组接口使用**真实 HTTP 状态码**（403 / 404），便于嵌入式端按状态码分支处理；
-> 响应体仍保持 `{ code, message, data }` 结构，前端可复用同一套解包逻辑。
 
 ### 鉴权
 
@@ -549,6 +648,9 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 | `SUBSCRIBE_SECRET` | `iot-platform-subscribe-secret` | 订阅凭证签名密钥，**生产环境务必覆盖** |
 | `SUBSCRIBE_REQUIRE_TOKEN` | `true` | 设为 `false` 可关闭鉴权（仅建议内网调试） |
 | `SUBSCRIBE_BASE_URL` | 空 | 对外可达的服务地址，留空则由请求头 `Host` 推断 |
+
+**对外基础地址推断**：`query.base` → `SUBSCRIBE_BASE_URL` → 请求头 `Host`，
+同一份代码在局域网直连、内网穿透、Nginx 反代下都能生成正确的直链。
 
 ### GET `/:key` 设备订阅
 
@@ -593,7 +695,8 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
     "active_time": "2026-10-12 21:59:43",
     "last_online": "2026-10-12 21:59:43"
   },
-  "update_available": false,
+  "update_available": true,
+  "pending_upgrades": [],
   "latest": {
     "id": "FW-20261012-495",
     "name": "初始",
@@ -622,10 +725,11 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
       "md5": "d4667d0889e07d408306ae280160664e",
       "changelog": "初始化",
       "released_at": "2026-10-12 21:03:14",
-      "download_url": "http://localhost:3000/api/subscribe/9/download?token=af8ea5f9b28690fe"
+      "download_url": "http://localhost:3000/api/subscribe/9/download?token=af8ea5f9b28690fe&version=1.0.0"
     }
   ],
-  "compat": []
+  "compat": [],
+  "mqtt": null
 }
 ```
 
@@ -640,13 +744,15 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 | `device.active_time` | 设备激活时间，格式 `YYYY-MM-DD HH:mm:ss`；未激活时为 `null` |
 | `device.last_online` | 最近一次上线时间，每次成功订阅都会刷新 |
 | `update_available` | 语义化版本比较后判定；设备版本高于库内版本时不降级，返回 `false` |
+| `pending_upgrades` | 积压的升级指令数组（任务创建后主动推送，离线设备上线订阅时补推），单项结构同 SSE `upgrade` 事件 data |
 | `latest` | 该产品下**版本最高的「已发布」固件**；无可发布固件时为 `null` |
 | `latest.download_url` | 推荐设备使用：带鉴权、可统计、可隐藏真实存储路径 |
-| `latest.direct_url` | 文件静态直链，可直接给支持 HTTP 下载的固件模块使用 |
+| `latest.direct_url` | 文件静态直链（本机模式直出文件，OSS 模式由后端代理回源），可直接给支持 HTTP 下载的固件模块使用 |
 | `latest.file_size_bytes` | 由 `file_size` 文本换算出的字节数，便于设备判断剩余空间 |
-| `latest.file_available` | 文件是否真实存在于服务端；为 `false` 时两个 URL 均为 `null` |
-| `available_versions` | 该产品下全部已发布固件（版本降序），便于设备做灰度或回滚 |
+| `latest.file_available` | 文件是否真实存在于存储层（本机或 OSS）；为 `false` 时两个 URL 均为 `null` |
+| `available_versions` | 该产品下全部已发布固件（版本降序），`download_url` 已带 `&version=`，便于设备做灰度或回滚 |
 | `compat` | 兼容型号与可升级版本区间（来自 `firmware_compat` 表） |
+| `mqtt` | MQTT 启用时返回连接信息 `{ broker_host, broker_port, ws_port, protocol, username, downlink_topic, uplink_topic, info_topic }`（topic 已替换为该设备 ID），设备可据此切换实时通道；未启用为 `null` |
 
 **错误响应**
 
@@ -659,7 +765,7 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 
 ### GET `/:key/link` 生成订阅链接（管理端）
 
-设备页「订阅」按钮调用。返回订阅地址、token、最新固件概览与接入示例，
+设备页「订阅」按钮调用，**需登录 + `device:view`**。返回订阅地址、token、最新固件概览与接入示例，
 前端再拿 `token` 真实请求一次 `/:key`，即可把设备端将收到的响应原样展示给用户。
 
 **响应 `data` 示例**
@@ -681,6 +787,7 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
   "download_url": "http://localhost:3000/api/subscribe/9/download?token=af8ea5f9b28690fe",
   "update_available": false,
   "latest": { "...": "同 GET /:key 的 latest 结构" },
+  "mqtt": null,
   "sample": {
     "curl": "curl \"http://localhost:3000/api/subscribe/9?token=af8ea5f9b28690fe&current_version=v1.0.0\"",
     "response": { "code": 0, "data": { "update_available": true, "latest": { "version": "v1.0.0", "download_url": "..." } } }
@@ -695,7 +802,7 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 | 参数 | 必填 | 说明 |
 | --- | --- | --- |
 | `token` | 是 | 订阅凭证 |
-| `version` | 否 | 指定版本（如 `1.0.0`），缺省下发该产品最新已发布固件 |
+| `version` | 否 | 指定版本（如 `1.0.0`，兼容 `v1.0.0` 写法），缺省下发该产品最新已发布固件 |
 
 - 成功：`200`，`Content-Type: application/octet-stream`，
   `Content-Disposition: attachment; filename="FW-20261012-495-1.0.0.bin"`（文件名统一为 ASCII 以保证设备端兼容）
@@ -709,7 +816,9 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 | 事件 | 触发时机 | data 内容 |
 | --- | --- | --- |
 | `hello` | 连接建立后立即下发 | `{ device_id, server_time }` |
-| `upgrade` | OTA 任务创建 / 重新推送时 | 升级指令（同 `pending_upgrades` 单项结构） |
+| `upgrade` | OTA 任务创建 / 重新推送 / 连接建立时捎带积压任务 | 升级指令（同 `pending_upgrades` 单项结构） |
+
+**升级指令单项结构**：`{ task_id, task_name, firmware_id, target_version, strategy, retry, timeout, pushed_at, firmware }`，`firmware` 为固件信息体（同 `latest`，含 `download_url` / `direct_url`）。
 
 - 连接保活：每 25 秒发送一个 `: keep-alive` 注释帧，避免中间网络设备掐断空闲连接。
 - 设备若不支持长连接，会在下次订阅轮询时通过响应里的 `pending_upgrades` 拿到升级指令（补推）。
@@ -750,6 +859,29 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 
 > 鉴权失败（403）与设备不存在（404）不产生任何副作用，无法借上报接口刷任务统计。
 
+### POST `/:key/info` 设备信息上报（HTTP 兜底）
+
+不支持 MQTT 的设备用此入口上报信息，落库逻辑与 MQTT `device/{id}/info` 完全相同。鉴权同订阅接口。
+
+**请求体**（字段均可选，按需上报；也支持 `{ "type": "info", "data": { ... } }` 包裹格式）：
+
+```json
+{
+  "battery": 88,
+  "signal": -65,
+  "mac": "AA:BB:CC:DD:EE:FF",
+  "hardware_version": "v1.1",
+  "firmware_version": "v1.0.0",
+  "longitude": 121.47,
+  "latitude": 31.23,
+  "location": "上海·浦东"
+}
+```
+
+归一化规则同 §2.2 的 `POST /:id/info`（电量 0–1 小数自动 ×100、信号质量 % → dBm、经纬度越界丢弃），并视为在线心跳。
+
+**响应 `data`**：`{ device_id, device_name, updated: [已更新字段名], info: { battery, signal, mac, hardware_version, firmware_version, longitude, latitude, location, info_updated_at } }`。未提供任何可更新字段返回 `400`。
+
 ### 设备端接入示例
 
 ```c
@@ -766,6 +898,11 @@ http_get(url, &resp);
 if (resp.device.activated) {
     // 设备首次接入平台，active_time = resp.device.active_time
     led_set(LED_ONLINE);
+}
+
+// 积压的升级指令优先处理（离线补推）
+for (i = 0; i < resp.pending_upgrades_count; i++) {
+    do_upgrade(&resp.pending_upgrades[i]);
 }
 
 if (resp.update_available) {
@@ -797,10 +934,12 @@ if (resp.update_available) {
 云端创建 OTA 任务（strategy=immediate）
    │
    ├─ 为每台目标设备生成 device_upgrade_jobs（pending）
-   ├─ 在线设备若有 SSE 长连接 → 主动 emit upgrade 事件（真正的 Push）
-   └─ 离线 / 无长连接设备 → job 保持 pending
+   ├─ 在线设备：SSE 长连接主动推 upgrade 事件（Push）
+   │            或 MQTT 下行 device/{id}/downlink（REST API 降级兜底）
+   └─ 离线设备 → job 保持 pending
          │
-         └─ 设备上线订阅时 → pending_upgrades 补推（天然支持离线补推）
+         ├─ 设备上线订阅时 → pending_upgrades 补推（天然支持离线补推）
+         └─ 设备 MQTT 上线 → 延迟补推（mqtt-repush）
 
 设备收到升级指令
    ├─ 下载固件（download_url）
@@ -813,106 +952,23 @@ if (resp.update_available) {
 
 ---
 
-## 8. 认证 `/api/auth`
-
-管理端登录会话接口。除 `/login`、`/register` 外的接口需登录。
-
-| 方法 | 路径 | 鉴权 | 说明 |
-| --- | --- | --- | --- |
-| POST | `/login` | 公开 | 登录，返回 token + 用户资料（含权限集） |
-| POST | `/register` | 公开 | 注册（开关 `AUTH_ALLOW_REGISTER`，默认归入 `viewer` 组） |
-| GET | `/me` | 登录 | 获取当前登录用户资料 |
-| POST | `/logout` | 公开 | 退出（无状态 token，仅前端清理） |
-| POST | `/password` | 登录 | 修改自己的密码 |
-| GET | `/permissions` | 登录 | 权限点字典（用户组配置页用） |
-
-**POST `/login`**
-
-请求体：
-
-```json
-{ "username": "admin", "password": "Password1234" }
-```
-
-响应 `data`：
-
-```json
-{
-  "token": "<payload>.<hmac>",
-  "user": {
-    "id": 1,
-    "username": "admin",
-    "nickname": "平台管理员",
-    "email": "admin@iot.local",
-    "phone": "13800000001",
-    "status": "active",
-    "group_id": 1,
-    "group_name": "超级管理员",
-    "group_code": "super_admin",
-    "permissions": ["dashboard:view", "device:view", "..."],
-    "last_login": "2026-10-13 00:30:00",
-    "created_at": "2026-10-12 18:00:00"
-  }
-}
-```
-
-用户不存在与口令错误返回同一文案 `用户名或密码错误`，避免用户名枚举。账号禁用返回 `403 账号已被禁用`。
-
-**POST `/register`**
-
-| 字段 | 必填 | 说明 |
-| --- | --- | --- |
-| `username` | 是 | 字母开头，字母/数字/下划线，3-20 位 |
-| `password` | 否 | 6-32 位，至少含字母/数字/符号中的两种 |
-| `nickname` `email` `phone` | 否 | 邮箱/手机号格式校验 |
-
-新用户默认归入 `AUTH_DEFAULT_GROUP`（默认 `viewer`），初始积分 `10`，无头像（`avatar_url` 为空串，前端渲染默认头像）。注册成功直接返回 token，前端可跳过登录页。
-
-**GET `/me`**
-
-返回当前登录用户资料（结构同 `/login` 的 `user`）。路由守卫刷新页面时调用，校验 token 有效性并拉取最新权限。
-
-**POST `/password`**
-
-请求体 `{ old_password, new_password }`。原密码错误返回 `400 原密码不正确`。修改成功后前端应清理会话跳登录页（原 token 仍有效，但语义上要求重新登录）。
-
-**GET `/permissions`**
-
-返回权限点字典数组，供用户组配置页渲染勾选框：
-
-```json
-[
-  { "key": "dashboard:view", "label": "仪表盘", "group": "基础" },
-  { "key": "device:view", "label": "设备查看", "group": "设备" }
-]
-```
-
-内置用户组与权限点完整清单见 [ARCHITECTURE.md](./ARCHITECTURE.md) §5.3。
-
-### 环境变量
-
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `AUTH_SECRET` | `iot-platform-auth-secret-change-me` | token 签名密钥，**生产环境务必覆盖** |
-| `AUTH_TOKEN_TTL` | `604800`（7 天） | token 有效期（秒） |
-| `AUTH_ALLOW_REGISTER` | `true` | 是否开放注册 |
-| `AUTH_DEFAULT_GROUP` | `viewer` | 新注册用户默认所属用户组 code |
-
----
-
 ## 9. 用户管理 `/api/users`
 
-**鉴权**：整组要求登录；读接口要求 `user:view`，写接口要求 `user:manage`。
+**鉴权**：整组要求登录；读接口要求 `user:view`，写接口要求 `user:manage`（头像上传除外——登录用户上传自己的头像即可）。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/` | 列表（分页 + 用户名/用户组/状态筛选） |
+| GET | `/online` | 在线用户统计（5 分钟内有活跃视为在线） |
+| GET | `/activities/labels` | 行为类型字典（筛选用） |
+| GET | `/activities` | 全部用户行为日志（分页 + 筛选） |
+| GET | `/:id/activities` | 指定用户的行为日志 |
 | POST | `/` | 新增用户（初始积分 10） |
 | GET | `/meta/groups` | 用户组下拉选项 |
 | GET | `/:id` | 详情 |
 | PUT | `/:id` | 编辑（昵称/邮箱/手机/用户组/状态） |
 | PUT | `/:id/password` | 管理员重置密码 |
-| PUT | `/:id/points` | 管理员修改积分，需 `user:manage` |
+| PUT | `/:id/points` | 管理员修改积分 |
 | POST | `/avatar` | 上传自己的头像（multipart/form-data，字段 `file`） |
 | DELETE | `/:id` | 删除（不能删自己、不能删最后一个可用超管） |
 
@@ -937,11 +993,10 @@ if (resp.update_available) {
 | `email` / `phone` | string | 联系方式 |
 | `status` | string | `active` / `disabled` |
 | `group_id` | number | 所属用户组 ID |
-| `group_name` | string | 用户组名称 |
-| `group_code` | string | 用户组 code |
+| `group_name` / `group_code` | string | 用户组名称 / code |
 | `points` | number | 积分，新用户默认 `10`，仅管理员可改 |
 | `avatar` | string | 头像文件名，空表示未上传 |
-| `avatar_url` | string | 头像访问地址，未上传为 `''`（前端渲染默认头像） |
+| `avatar_url` | string | 头像访问地址（`/uploads/avatars/...`），未上传为 `''`（前端渲染默认头像） |
 | `last_login` | datetime | 最近登录 |
 | `created_at` | datetime | 创建时间 |
 
@@ -961,6 +1016,27 @@ if (resp.update_available) {
 
 `group_id` 必填。分配 `super_admin` 组时，仅超管可操作。
 
+**GET `/online` → `data`**
+
+```json
+{
+  "online_count": 2,
+  "total_users": 4,
+  "online_users": [
+    { "id": 1, "username": "admin", "nickname": "平台管理员", "status": "active", "last_login": "...", "group_name": "超级管理员", "group_code": "super_admin" }
+  ],
+  "group_stats": [
+    { "id": 1, "name": "超级管理员", "code": "super_admin", "total": 1, "active": 1, "online": 1 }
+  ]
+}
+```
+
+**GET `/activities` 查询参数**：`user_id`（按用户）、`action`（行为类型 key）、`keyword`（模糊匹配 target / username / path）、`date`（`YYYY-MM-DD`）、`page` / `pageSize`（≤100）。`/:id/activities` 为指定用户版（除 `user_id` 外同参）。
+
+→ `data`: `{ list: [{ id, user_id, username, action, action_label, target, method, path, ip, status_code, detail, created_at }], total, page, pageSize }`
+
+**GET `/activities/labels` → `data`**：`[{ key, label }]`，`action` 取值 `login` / `logout` / `create` / `update` / `delete` / `publish` / `deprecate` / `push` / `pause` / `resume` / `cancel` / `handle` / `upload` / `reset_password` / `change_password` / `other`。
+
 **PUT `/:id`**：可部分更新；修改 `group_id` 时不能修改自己的用户组。
 
 **PUT `/:id/points` 请求体**
@@ -973,13 +1049,13 @@ if (resp.update_available) {
 
 **POST `/avatar`**
 
-`multipart/form-data`，字段名 `file`，仅接受 `jpg/png/gif/webp`，最大 5MB。上传成功后旧头像文件被删除，返回：
+`multipart/form-data`，字段名 `file`，仅接受 `jpg/png/gif/webp`，最大 5MB。上传成功后旧头像文件被删除（含存储层），返回：
 
 ```json
 { "code": 0, "message": "头像已更新", "data": { "avatar": "u5-1792105040803.png", "avatar_url": "/uploads/avatars/u5-1792105040803.png" } }
 ```
 
-头像通过静态目录 `/uploads/avatars/` 直接访问；`avatar_url` 为空串时前端应渲染默认头像。
+头像 URL 形式 `/uploads/avatars/...` 不随存储模式变化（本机直出 / OSS 代理回源，见第 16 节）；`avatar_url` 为空串时前端应渲染默认头像。
 
 **提权防护**：
 - 普通管理员不能把用户分配到 `super_admin` 组
@@ -1055,7 +1131,7 @@ if (resp.update_available) {
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/health` | 服务存活探测 |
+| GET | `/api/health` | 服务存活探测（免鉴权） |
 
 ```json
 { "code": 0, "message": "ok", "time": "2026-05-05T14:00:00.000Z" }
@@ -1090,7 +1166,9 @@ if (resp.update_available) {
 | GET | `/info` | 运行信息（Node 版本 / 运行时长 / 内存 / Redis / MQTT 状态） |
 | POST | `/scan-offline` | 手动触发一次离线扫描 |
 
-配置由 `config-store` 持久化到 `server/config.json` 并同步 `process.env`。`PUT` 时敏感项传空或 `••••••` 表示不改；热更新项（如 `DEVICE_OFFLINE_TIMEOUT`、`MQTT_REST_FALLBACK`、`MQTT_REPUSH_*`、`API_LOG_*`）即时生效，其余改后需重启后端。`GET` 对密钥类字段脱敏展示。
+配置由 `config-store` 持久化到 `server/config.json` 并同步 `process.env`。`PUT` 时敏感项传空或 `••••••` 表示不改（脱敏集合含 `AUTH_SECRET`、`SUBSCRIBE_SECRET`、`MQTT_PASSWORD`、`MQTT_API_SECRET`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY`）；热更新项（如 `DEVICE_OFFLINE_TIMEOUT`、`MQTT_REST_FALLBACK`、`MQTT_REPUSH_*`、`API_LOG_*`、页脚 `FOOTER_*`）即时生效，其余改后需重启后端。
+
+`GET /info` → `data`：`{ nodeVersion, platform, pid, uptime, uptimeSeconds, port, memory: { rss, heapUsed, heapTotal, external }, configFile, configExists, redis: { enabled, url, onlineDevices }, mqtt: { ... } }`。
 
 ## 14. MQTT 运维 `/api/mqtt`
 
@@ -1120,3 +1198,58 @@ if (resp.update_available) {
 | GET | `/by-message-type` | 按消息类型（信封 `type`）聚合 |
 | GET | `/by-device` | 按设备聚合（Top N） |
 | GET | `/recent` | 最近日志明细（分页，支持事件类型 / 方向 / 设备 / 状态筛选） |
+
+## 16. 文件访问 `/uploads/*`（非 `/api`）
+
+固件包与用户头像通过 `/uploads/{category}/{filename}` 访问（免鉴权，URL 形式不随存储模式变化）：
+
+| 路径 | 说明 |
+| --- | --- |
+| `/uploads/firmware/<file_path>` | 固件文件（`direct_url` 直链指向此处） |
+| `/uploads/avatars/<avatar>` | 用户头像（`avatar_url` 指向此处） |
+
+存储模式由 `server/config.json` 的 `STORAGE_MODE` 决定（改后需重启）：
+
+| 模式 | 行为 |
+| --- | --- |
+| `local`（默认） | `express.static` 直出本机 `server/uploads/` |
+| `oss` | 先查本机目录（历史存量文件兜底），未命中则由后端流式回源 MinIO/S3 |
+
+两种模式下 URL、下载行为完全一致，调用方无需关心后端用哪种存储。相关配置项（`MINIO_ENDPOINT` / `MINIO_BUCKET` / `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` / `MINIO_PATH_PREFIX` 等）见 [minio.md](./minio.md)。
+
+## 17. 系统公告 `/api/announcements`
+
+平台公告的发布与已读管理。数据表 `announcements` + `announcement_reads`（按用户隔离的已读记录，联合主键幂等）。
+
+**鉴权**：整组要求登录；读接口 `announcement:view`，管理接口 `announcement:manage`（仅超管内置）。非管理员只能看到 `enabled=1` 的公告，管理员可见全部（含停用的）。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/` | 列表（分页，含当前用户已读状态与未读数），`?status=unread` 只看未读 |
+| GET | `/unread` | 未读公告数（顶栏红点轮询用） |
+| GET | `/:id` | 详情（**查看即自动标记当前用户已读**） |
+| POST | `/` | 发布公告，需 `announcement:manage` |
+| PUT | `/:id` | 修改（标题/内容/级别/启用状态），需 `announcement:manage` |
+| DELETE | `/:id` | 删除（支持逗号分隔批量，级联清已读记录），需 `announcement:manage` |
+| POST | `/:id/read` | 标记已读（幂等）；`?all=1` 全部标记已读 |
+
+**Announcement 对象**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | number | 主键 |
+| `title` / `content` | string | 标题（≤200 字）/ 正文 |
+| `level` | string | `info` / `minor` / `major` / `critical` |
+| `enabled` | 0\|1 | 是否启用（停用的公告非管理员不可见） |
+| `publisher` | string | 发布人（昵称，系统种子为「系统」） |
+| `read` | 0\|1 | 当前用户是否已读（接口附加字段） |
+| `read_at` | datetime | 当前用户的已读时间，未读为 `null` |
+| `created_at` / `updated_at` | datetime | 发布 / 最后修改时间 |
+
+**POST / PUT 请求体**：`{ title, content, level?, enabled? }`，`title` / `content` 必填；`level` 非法值返回 `400`。
+
+**GET `/` → `data`**：`{ list: Announcement[], total, page, pageSize, unread }`（`unread` 为当前用户启用公告的未读数）。
+
+---
+
+> **维护约定（mem）**：今后为后端新增或修改接口时，必须同步更新本文档对应章节（新增模块加新 §，改动行为/字段改对应条目），并在 `docs/CHANGELOG.md` 记一条变更索引。

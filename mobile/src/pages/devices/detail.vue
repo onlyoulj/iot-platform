@@ -193,7 +193,50 @@
 
     <!-- 底部操作 -->
     <view class="footer-actions">
+      <button class="btn-plain" @click="openDoc">接入文档</button>
       <button class="btn-plain" @click="reloadAll">刷新全部</button>
+    </view>
+
+    <!-- 接入文档弹层 -->
+    <view class="mask" v-if="docVisible" @click="docVisible = false">
+      <view class="doc-sheet" @click.stop>
+        <view class="doc-head">
+          <text class="doc-title">设备接入文档</text>
+          <text class="doc-close" @click="docVisible = false">✕</text>
+        </view>
+        <scroll-view scroll-y class="doc-body">
+          <text class="doc-intro">设备「{{ device.name || device.device_name }}」（SN：{{ device.device_name }}）接入平台的三种方式，任选其一即可。</text>
+
+          <text class="doc-sec">方式一：HTTP 订阅（推荐，最简单）</text>
+          <text class="doc-desc">设备周期性 GET 以下地址（建议 1~24 小时一次），即可完成激活、保活和固件升级检查：</text>
+          <view class="doc-code" @click="copyText(subscribeUrl)"><text class="doc-code-txt" user-select>{{ subscribeUrl }}</text><text class="doc-copy">复制</text></view>
+          <text class="doc-desc">带版本上报的地址模板（把 <text class="mono">{version}</text> 换成设备当前版本）：</text>
+          <view class="doc-code" @click="copyText(subscribeUrlTemplate)"><text class="doc-code-txt" user-select>{{ subscribeUrlTemplate }}</text><text class="doc-copy">复制</text></view>
+
+          <text class="doc-sec">方式二：MQTT 实时通道</text>
+          <template v-if="mqttInfo">
+            <view class="doc-kv"><text class="doc-k">Broker</text><text class="doc-v mono">{{ mqttInfo.protocol }}://{{ mqttInfo.broker_host }}:{{ mqttInfo.broker_port }}</text></view>
+            <view class="doc-kv"><text class="doc-k">WebSocket</text><text class="doc-v mono">{{ mqttInfo.ws_protocol }}://{{ mqttInfo.broker_host }}:{{ mqttInfo.ws_port }}</text></view>
+            <view class="doc-kv"><text class="doc-k">用户名</text><text class="doc-v mono">{{ mqttInfo.username }}</text></view>
+            <view class="doc-kv"><text class="doc-k">下行主题（接收指令）</text><text class="doc-v mono" @click="copyText(mqttInfo.downlink_topic)">{{ mqttInfo.downlink_topic }} 📋</text></view>
+            <view class="doc-kv"><text class="doc-k">上行主题（上报结果）</text><text class="doc-v mono" @click="copyText(mqttInfo.uplink_topic)">{{ mqttInfo.uplink_topic }} 📋</text></view>
+            <view class="doc-kv"><text class="doc-k">信息上报主题</text><text class="doc-v mono" @click="copyText(mqttInfo.info_topic)">{{ mqttInfo.info_topic }} 📋</text></view>
+            <text class="doc-desc">消息格式：{"type": "heartbeat|upgrade_status|info", "data": {...}}；升级指令通过下行主题推送，升级结果经上行主题上报。</text>
+          </template>
+          <text v-else class="doc-desc">MQTT 未启用，请使用 HTTP 订阅方式。</text>
+
+          <text class="doc-sec">方式三：HTTP 上报接口</text>
+          <view class="doc-kv"><text class="doc-k">固件信息订阅</text><text class="doc-v mono">GET  /api/subscribe/{{ device.id }}?token=…</text></view>
+          <view class="doc-kv"><text class="doc-k">固件下载</text><text class="doc-v mono">GET  /api/subscribe/{{ device.id }}/download?token=…</text></view>
+          <view class="doc-kv"><text class="doc-k">升级结果上报</text><text class="doc-v mono">POST /api/subscribe/{{ device.id }}/report</text></view>
+          <view class="doc-kv"><text class="doc-k">设备信息上报</text><text class="doc-v mono">POST /api/subscribe/{{ device.id }}/info</text></view>
+
+          <text class="doc-sec">升级结果上报示例</text>
+          <view class="doc-code"><text class="doc-code-txt" user-select>POST {{ subscribeUrl.split('?')[0].replace(/\/\d+$/, '') + '/' + device.id + '/report' }}
+{ "task_id": "OTA-xxx", "status": "success" }</text></view>
+          <text class="doc-foot">完整文档见管理端 docs/INTEGRATION.md 与 docs/MQTT.md</text>
+        </scroll-view>
+      </view>
     </view>
   </view>
 </template>
@@ -202,6 +245,7 @@
 import { ref, computed } from 'vue'
 import { onLoad, onPullDownRefresh } from '@dcloudio/uni-app'
 import { deviceApi } from '../../utils/api'
+import { getBaseUrl } from '../../config/server'
 
 const device = ref(null)
 const deviceId = ref(null)
@@ -496,6 +540,41 @@ function goFirmware() {
     return uni.showToast({ title: '该设备未关联产品', icon: 'none' })
   }
   uni.navigateTo({ url: `/pages/firmware/firmware?product=${encodeURIComponent(productName)}` })
+}
+
+/* ---------------- 接入文档弹层 ---------------- */
+
+const docVisible = ref(false)
+const mqttInfo = ref(null)
+
+/** 对外基础地址：与后端生成直链的推断一致，前端展示用当前后端地址 */
+function backendBase() {
+  // getBaseUrl() 形如 http://host:3000/api，剥掉 /api 得服务根
+  return getBaseUrl().replace(/\/api$/, '')
+}
+
+/** 设备订阅地址（token 与管理端「生成订阅链接」同一 HMAC 规则，这里展示管理端生成的地址模板） */
+const subscribeUrl = computed(() => {
+  const d = device.value
+  if (!d) return ''
+  return `${backendBase()}/api/subscribe/${d.id}?token={订阅token}`
+})
+
+const subscribeUrlTemplate = computed(() => {
+  const url = subscribeUrl.value
+  return url ? `${url}&current_version={version}` : ''
+})
+
+/** 打开弹层时拉取 MQTT 连接信息（复用订阅链接接口返回的 mqtt 字段） */
+async function openDoc() {
+  docVisible.value = true
+  if (mqttInfo.value) return
+  try {
+    const data = await deviceApi.subscribeLink(deviceId.value)
+    mqttInfo.value = data?.mqtt || null
+  } catch {
+    mqttInfo.value = null
+  }
 }
 
 function switchTab(key) {
@@ -937,6 +1016,11 @@ onPullDownRefresh(async () => {
 }
 .footer-actions {
   padding: 20rpx 24rpx 50rpx;
+  display: flex;
+  gap: 20rpx;
+}
+.footer-actions .btn-plain {
+  flex: 1;
 }
 .btn-plain {
   background: #ffffff;
@@ -944,5 +1028,120 @@ onPullDownRefresh(async () => {
   font-size: 28rpx;
   border-radius: 44rpx;
   border: 1rpx solid #d6e2fb;
+}
+
+/* 接入文档弹层 */
+.mono {
+  font-family: Consolas, Monaco, monospace;
+}
+.mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+}
+.doc-sheet {
+  width: 100%;
+  background: #ffffff;
+  border-radius: 28rpx 28rpx 0 0;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.doc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 30rpx 32rpx 16rpx;
+  border-bottom: 1rpx solid #f0f1f4;
+}
+.doc-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #26292f;
+}
+.doc-close {
+  color: #8a8f99;
+  font-size: 32rpx;
+  padding: 0 10rpx;
+}
+.doc-body {
+  flex: 1;
+  padding: 24rpx 32rpx 40rpx;
+  max-height: 76vh;
+  box-sizing: border-box;
+}
+.doc-intro {
+  display: block;
+  font-size: 25rpx;
+  color: #5a6070;
+  line-height: 1.7;
+  margin-bottom: 20rpx;
+}
+.doc-sec {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #26292f;
+  margin: 28rpx 0 12rpx;
+}
+.doc-desc {
+  display: block;
+  font-size: 23rpx;
+  color: #8a8f99;
+  line-height: 1.7;
+  margin-bottom: 12rpx;
+}
+.doc-code {
+  background: #f4f5f9;
+  border-radius: 12rpx;
+  padding: 18rpx 20rpx;
+  margin-bottom: 14rpx;
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+}
+.doc-code-txt {
+  flex: 1;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 21rpx;
+  color: #30343d;
+  word-break: break-all;
+  line-height: 1.6;
+}
+.doc-copy {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: #2b6de8;
+  padding: 2rpx 6rpx;
+}
+.doc-kv {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20rpx;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid #f5f6fa;
+}
+.doc-k {
+  color: #8a8f99;
+  font-size: 24rpx;
+  flex-shrink: 0;
+}
+.doc-v {
+  color: #30343d;
+  font-size: 23rpx;
+  text-align: right;
+  word-break: break-all;
+}
+.doc-foot {
+  display: block;
+  font-size: 21rpx;
+  color: #b3b8c2;
+  margin-top: 24rpx;
+  text-align: center;
 }
 </style>

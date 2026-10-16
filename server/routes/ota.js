@@ -5,6 +5,7 @@ import { authenticate, requirePermission } from '../services/auth.js';
 import { emit as sseEmit, hasSseClient } from '../services/push.js';
 import mqtt from '../services/mqtt.js';
 import { getDescendantIds } from '../services/device-groups.js';
+import { buildFirmwareDownloadUrls } from '../services/storage-urls.js';
 
 const router = Router();
 
@@ -66,6 +67,9 @@ function buildUpgradeCommand(job, task, req) {
     : null;
   const token = buildSubscribeToken(job.device_id);
   const baseUrl = resolveBaseUrl(req);
+  const urls = firmware?.file_path
+    ? buildFirmwareDownloadUrls(baseUrl, job.device_id, token, firmware.file_path)
+    : {};
   const fwPayload = firmware
     ? {
         id: firmware.id,
@@ -75,10 +79,8 @@ function buildUpgradeCommand(job, task, req) {
         md5: firmware.md5,
         file_size: firmware.file_size,
         changelog: firmware.desc,
-        download_url: firmware.file_path
-          ? `${baseUrl}/api/subscribe/${job.device_id}/download?token=${token}`
-          : null,
-        direct_url: firmware.file_path ? `${baseUrl}/uploads/firmware/${firmware.file_path}` : null,
+        download_url: firmware.file_path ? urls.download_url : null,
+        direct_url: firmware.file_path ? urls.direct_url : null,
       }
     : null;
 

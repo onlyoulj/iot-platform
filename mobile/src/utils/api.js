@@ -4,7 +4,8 @@ import { getBaseUrl, getToken } from '../config/server'
 export const authApi = {
   login: (data) => post('/auth/login', data),
   register: (data) => post('/auth/register', data),
-  me: () => get('/auth/me'),
+  /** silent：启动时静默校验 token 用，失败不弹 toast（App.vue onLaunch 调用） */
+  me: (options) => get('/auth/me', null, options),
   logout: () => post('/auth/logout'),
   password: (data) => post('/auth/password', data),
 }
@@ -54,6 +55,8 @@ export const deviceApi = {
   setDesired: (id, data) => put(`/devices/${id}/shadow/desired`, data),
   groups: () => get('/device-groups'),
   products: () => get('/devices/meta/products'),
+  /** 管理端生成设备订阅链接（含 token 与 MQTT 连接信息），接入文档弹层使用 */
+  subscribeLink: (key) => get(`/subscribe/${key}/link`),
   create: (data) => post('/devices', data),
   update: (id, data) => put(`/devices/${id}`, data),
   remove: (ids) => del(`/devices/${ids}`),
@@ -113,4 +116,15 @@ export const alertApi = {
   list: (params) => get('/alerts', params),
   stats: () => get('/alerts/stats'),
   handle: (id, data) => post(`/alerts/${id}/handle`, data),
+}
+
+export const announcementApi = {
+  /** 公告列表（分页，含当前用户已读状态与未读数） */
+  list: (params) => get('/announcements', params),
+  /** 未读数：{ unread } */
+  unread: () => get('/announcements/unread'),
+  /** 详情（查看即自动已读） */
+  detail: (id) => get(`/announcements/${id}`),
+  /** 标记已读（幂等）；all=true 全部标记 */
+  markRead: (id, all = false) => post(`/announcements/${id}/read${all ? '?all=1' : ''}`),
 }

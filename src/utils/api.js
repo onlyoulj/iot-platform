@@ -231,6 +231,24 @@ export const systemApi = {
   getInfo: () => request.get('/system/info'),
 }
 
+/* ============================ 系统公告 ============================ */
+export const announcementApi = {
+  /** 公告列表（分页，含当前用户已读状态与未读数）；params.status='unread' 只看未读 */
+  list: (params) => request.get('/announcements', params),
+  /** 未读公告数：{ unread } */
+  unread: () => request.get('/announcements/unread'),
+  /** 详情（查看即自动已读） */
+  detail: (id) => request.get(`/announcements/${id}`),
+  /** 发布 { title, content, level?, enabled? } */
+  create: (data) => request.post('/announcements', data),
+  /** 修改 */
+  update: (id, data) => request.put(`/announcements/${id}`, data),
+  /** 删除（支持逗号分隔批量） */
+  remove: (ids) => request.del(`/announcements/${ids}`),
+  /** 标记已读（幂等）；all=true 全部标记 */
+  markRead: (id, all = false) => request.post(`/announcements/${id}/read${all ? '?all=1' : ''}`),
+}
+
 /* ======================= 固件订阅（面向设备侧） ======================= */
 /**
  * 设备通过 HTTP 轮询订阅地址获取自身产品的固件信息（版本、状态、直链、MD5 等）。

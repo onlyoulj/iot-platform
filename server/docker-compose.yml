@@ -1,0 +1,60 @@
+# ============================================================
+# IoT 平台后端 docker compose
+# 用法：docker compose up -d
+# ------------------------------------------------------------
+# 数据持久化：iot-data（SQLite）+ iot-uploads（固件/头像）两个卷
+# 配置：environment 段或挂载 config.json（二选一，环境变量优先）
+# 可选 Redis：取消 redis 服务注释即可（自动被发现：REDIS_URL 指向 redis 服务名）
+# ============================================================
+services:
+  iot-server:
+    build: .
+    image: iot-server:latest
+    container_name: iot-server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"          # 对外开放端口（宿主机:容器）
+    environment:
+      # ---- 必改：生产密钥（也可用 env_file 引入 .env）----
+      AUTH_SECRET: "change-me-to-a-random-hex-string"
+      SUBSCRIBE_SECRET: "change-me-subscribe-secret"
+      # ---- 存储：local（容器内卷）或 oss（MinIO）----
+      STORAGE_MODE: "local"
+      # MINIO_ENDPOINT: "http://192.168.0.127:9000"
+      # MINIO_BUCKET: "platform"
+      # MINIO_ACCESS_KEY: ""
+      # MINIO_SECRET_KEY: ""
+      # ---- MQTT（EMQX）----
+      MQTT_ENABLED: "true"
+      MQTT_HOST: "129.204.31.17"
+      MQTT_PORT: "1883"
+      MQTT_API_URL: "https://i07bb631.ala.cn-shenzhen.emqxsl.cn:8443/api/v5"
+      MQTT_API_KEY: "bc91151e"
+      MQTT_API_SECRET: "QH1s7XSAo6Eu.-LJ"
+      # ---- Redis：compose 内 redis 服务（未启用则降级）----
+      # REDIS_URL: "redis://redis:6379"
+    volumes:
+      - iot-data:/app/server/db        # SQLite 数据持久化
+      - iot-uploads:/app/server/uploads # 固件/头像（STORAGE_MODE=local 时）
+      # 用挂载文件代替环境变量配置（二选一）：
+      # - ./config.docker.json:/app/server/config.json:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  # 可选：容器内 Redis（启用后取消注释 iot-server.environment 的 REDIS_URL）
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: iot-redis
+  #   restart: unless-stopped
+  #   volumes:
+  #     - iot-redis:/data
+  #   command: ["redis-server", "--appendonly", "yes"]
+
+volumes:
+  iot-data:
+  iot-uploads:
+  # iot-redis:

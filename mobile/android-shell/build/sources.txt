@@ -1,0 +1,2 @@
+build/obj/com/iot/mobile/R.java
+app/src/main/java/com/iot/mobile/MainActivity.java

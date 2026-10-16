@@ -48,6 +48,16 @@ const CONFIG_META = [
   { key: 'API_LOG_HEALTH', label: '记录健康检查', group: 'API 日志', type: 'switch', desc: '是否记录 /api/health 调用', restart: false },
   { key: 'DEVICE_OFFLINE_TIMEOUT', label: '设备离线阈值（秒）', group: '设备', type: 'number', desc: '超过该时间无心跳的在线设备自动置为离线，最小 60', restart: false },
   { key: 'PORT', label: '服务端口', group: '服务', type: 'number', desc: '修改后需重启，且前端代理要同步', restart: true },
+  { key: 'STORAGE_MODE', label: '文件存储模式', group: '文件存储', type: 'select', options: [
+    { value: 'local', label: '本机存储（server/uploads）' },
+    { value: 'oss', label: '对象存储 OSS（MinIO/S3）' },
+  ], desc: '固件包与头像的存储位置；切换前确保目标存储已含所需文件', restart: true },
+  { key: 'MINIO_ENDPOINT', label: 'MinIO 服务地址', group: '文件存储', type: 'text', desc: '如 http://192.168.0.127:9000，STORAGE_MODE=oss 时生效', restart: true },
+  { key: 'MINIO_BUCKET', label: 'Bucket', group: '文件存储', type: 'text', desc: '存储桶名，不存在时启动自动创建', restart: true },
+  { key: 'MINIO_ACCESS_KEY', label: 'Access Key', group: '文件存储', type: 'secret', desc: 'MinIO 访问密钥', restart: true },
+  { key: 'MINIO_SECRET_KEY', label: 'Secret Key', group: '文件存储', type: 'secret', desc: 'MinIO 私有密钥', restart: true },
+  { key: 'MINIO_REGION', label: 'Region', group: '文件存储', type: 'text', desc: '区域，MinIO 默认 us-east-1 即可', restart: true },
+  { key: 'MINIO_PATH_PREFIX', label: '对象前缀', group: '文件存储', type: 'text', desc: '可选，对象 key 统一前缀，如 prod/', restart: true },
   { key: 'REDIS_URL', label: 'Redis 连接地址', group: 'Redis', type: 'text', desc: '无密码 redis://127.0.0.1:6379；带密码 redis://:pwd@host:6379', restart: true },
   { key: 'MQTT_ENABLED', label: '启用 MQTT', group: 'MQTT (EMQX)', type: 'switch', desc: 'false 时禁用 MQTT，升级指令走 SSE + 轮询', restart: true },
   { key: 'MQTT_HOST', label: 'MQTT 连接地址', group: 'MQTT (EMQX)', type: 'text', desc: 'broker IP 或域名，如 129.204.31.17', restart: true },
@@ -137,6 +147,13 @@ router.put('/config', (req, res) => {
       return res.status(400).json({ code: 400, message: '补推最大次数不小于 0' });
     }
     allowed.MQTT_REPUSH_MAX_TIMES = String(m);
+  }
+
+  // 文件存储模式校验
+  if ('STORAGE_MODE' in allowed) {
+    if (!['local', 'oss'].includes(allowed.STORAGE_MODE)) {
+      return res.status(400).json({ code: 400, message: '文件存储模式仅支持 local / oss' });
+    }
   }
 
   // 布尔项归一化

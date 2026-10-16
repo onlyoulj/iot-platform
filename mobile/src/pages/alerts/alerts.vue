@@ -16,22 +16,16 @@
     </view>
 
     <!-- 告警列表 -->
-    <view class="card alert-card" v-for="a in list" :key="a.id">
+    <view class="card alert-card" v-for="a in list" :key="a.id" @click="goDetail(a)">
       <view class="a-top">
         <text class="a-level" :class="a.level">{{ levelText(a.level) }}</text>
         <text class="a-time">{{ a.created_at }}</text>
       </view>
-      <text class="a-msg">{{ a.message }}</text>
+      <text class="a-msg">{{ a.content }}</text>
       <view class="a-bottom">
         <text class="a-device" v-if="a.device_name">{{ a.device_name }}</text>
         <text class="a-status" :class="a.status">{{ a.status === 'handled' ? '已处理' : '未处理' }}</text>
       </view>
-      <button
-        v-if="a.status !== 'handled' && canHandle"
-        class="btn-handle"
-        size="mini"
-        @click="handle(a)"
-      >标记处理</button>
     </view>
 
     <view class="empty" v-if="!list.length && !loading">
@@ -77,6 +71,8 @@ async function load(append = false) {
     list.value = append ? [...list.value, ...rows] : rows
     total.value = data?.total ?? rows.length
     hasMore.value = list.value.length < total.value
+    // 缓存列表供详情页读取（告警无单独详情接口，字段在列表已齐全）
+    try { uni.setStorageSync('alert_list_cache', list.value.slice(0, 50)) } catch {}
   } catch (e) {
     // 统一 toast
   } finally {
@@ -104,21 +100,8 @@ function switchFilter(v) {
   reload()
 }
 
-function handle(a) {
-  uni.showModal({
-    title: '处理告警',
-    content: `确认标记该告警为已处理？`,
-    success: async (res) => {
-      if (!res.confirm) return
-      try {
-        await alertApi.handle(a.id, { action: 'handle' })
-        uni.showToast({ title: '处理成功', icon: 'success' })
-        reload()
-      } catch (e) {
-        // 统一 toast
-      }
-    },
-  })
+function goDetail(a) {
+  uni.navigateTo({ url: `/pages/alerts/detail?id=${a.id}` })
 }
 
 onShow(reload)
@@ -202,12 +185,6 @@ onReachBottom(() => {
 .a-device { color: #8a8f99; }
 .a-status.unhandled { color: #f0654f; }
 .a-status.handled { color: #22b07d; }
-.btn-handle {
-  margin-top: 16rpx;
-  background: #2b6de8;
-  color: #ffffff;
-  font-size: 24rpx;
-}
 .empty,
 .load-more {
   text-align: center;

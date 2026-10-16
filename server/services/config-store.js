@@ -38,6 +38,16 @@ const DEFAULTS = {
   API_LOG_RETENTION_DAYS: '30',
   API_LOG_HEALTH: 'false',
   PORT: '3000',
+  // 文件存储模式：local=本机 server/uploads，oss=MinIO/S3 兼容对象存储
+  STORAGE_MODE: 'local',
+  // MinIO / S3 兼容对象存储连接配置（STORAGE_MODE=oss 时生效）
+  MINIO_ENDPOINT: 'http://192.168.0.127:9000',
+  MINIO_BUCKET: 'platform',
+  MINIO_ACCESS_KEY: '',
+  MINIO_SECRET_KEY: '',
+  MINIO_REGION: 'us-east-1',
+  MINIO_PATH_PREFIX: '',
+  MINIO_FORCE_PATH_STYLE: 'true',
   // Redis 连接（无密码本机默认；生产可用 redis://:password@host:6379）
   REDIS_URL: 'redis://127.0.0.1:6379',
   // 设备心跳超时阈值（秒）：超过该时间无心跳的在线设备自动置为离线
@@ -67,7 +77,7 @@ const DEFAULTS = {
 };
 
 /** 敏感 key（含 SECRET），脱敏展示 */
-const SENSITIVE_KEYS = new Set(['AUTH_SECRET', 'SUBSCRIBE_SECRET', 'MQTT_PASSWORD', 'MQTT_API_SECRET']);
+const SENSITIVE_KEYS = new Set(['AUTH_SECRET', 'SUBSCRIBE_SECRET', 'MQTT_PASSWORD', 'MQTT_API_SECRET', 'MINIO_ACCESS_KEY', 'MINIO_SECRET_KEY']);
 
 /** 需重启生效的 key（模块级常量，运行时改 process.env 不生效） */
 const RESTART_REQUIRED = new Set([
@@ -78,6 +88,13 @@ const RESTART_REQUIRED = new Set([
   'SUBSCRIBE_REQUIRE_TOKEN',
   'SUBSCRIBE_BASE_URL',
   'PORT',
+  'STORAGE_MODE',
+  'MINIO_ENDPOINT',
+  'MINIO_BUCKET',
+  'MINIO_ACCESS_KEY',
+  'MINIO_SECRET_KEY',
+  'MINIO_REGION',
+  'MINIO_PATH_PREFIX',
   'REDIS_URL',
   'MQTT_ENABLED',
   'MQTT_HOST',

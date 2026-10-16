@@ -1,0 +1,4 @@
+#!/bin/bash
+# 卸载前停止服务（用户数据在 $TRIM_PKGVAR，由用户卸载时选择是否保留）
+"${TRIM_APPDEST}/cmd/main" stop 2>/dev/null
+exit 0

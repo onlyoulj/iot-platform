@@ -81,8 +81,13 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       open: false,
       // 开发环境把 /api 转发到后端，规避跨域并隐藏真实地址
+      // /uploads：头像、固件等静态文件直链也走后端（storage 代理），否则会命中 SPA 兜底页
       proxy: {
         '/api': {
+          target: proxyTarget,
+          changeOrigin: true,
+        },
+        '/uploads': {
           target: proxyTarget,
           changeOrigin: true,
         },
@@ -94,6 +99,10 @@ export default defineConfig(({ mode }) => {
       port: 4173,
       proxy: {
         '/api': {
+          target: proxyTarget,
+          changeOrigin: true,
+        },
+        '/uploads': {
           target: proxyTarget,
           changeOrigin: true,
         },

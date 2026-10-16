@@ -17,6 +17,7 @@
 import db from '../db/init.js';
 import mqtt from './mqtt.js';
 import { getConfig } from './config-store.js';
+import { buildFirmwareDownloadUrls } from './storage-urls.js';
 import crypto from 'crypto';
 
 /* ============================ 配置 ============================ */
@@ -180,6 +181,9 @@ function buildUpgradeCommand(job, task, baseUrl) {
     ? db.prepare('SELECT * FROM firmwares WHERE id = ?').get(task.firmware_id)
     : null;
   const token = buildSubscribeToken(job.device_id);
+  const urls = firmware?.file_path
+    ? buildFirmwareDownloadUrls(baseUrl, job.device_id, token, firmware.file_path)
+    : {};
 
   const fwPayload = firmware
     ? {
@@ -189,10 +193,8 @@ function buildUpgradeCommand(job, task, baseUrl) {
         md5: firmware.md5,
         file_size: firmware.file_size,
         changelog: firmware.desc,
-        download_url: firmware.file_path
-          ? `${baseUrl}/api/subscribe/${job.device_id}/download?token=${token}`
-          : null,
-        direct_url: firmware.file_path ? `${baseUrl}/uploads/firmware/${firmware.file_path}` : null,
+        download_url: firmware.file_path ? urls.download_url : null,
+        direct_url: firmware.file_path ? urls.direct_url : null,
       }
     : null;
 

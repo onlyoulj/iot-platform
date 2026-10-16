@@ -422,6 +422,52 @@ function migrateAlertColumns() {
 }
 migrateAlertColumns();
 
+/* ---------------- 系统公告 ---------------- */
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS announcements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    level TEXT NOT NULL DEFAULT 'info',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    publisher TEXT DEFAULT '',
+    created_at DATETIME DEFAULT (datetime('now','localtime')),
+    updated_at DATETIME DEFAULT (datetime('now','localtime'))
+  );
+
+  /* 公告已读记录：每个用户对每条公告一行（重复标记幂等） */
+  CREATE TABLE IF NOT EXISTS announcement_reads (
+    announcement_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    read_at DATETIME DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (announcement_id, user_id),
+    FOREIGN KEY (announcement_id) REFERENCES announcements(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`);
+
+/* 公告种子（幂等）：表为空时插入 2 条示例公告，老库升级也补齐 */
+const announcementCount = db.prepare('SELECT COUNT(*) as c FROM announcements').get().c;
+if (announcementCount === 0) {
+  const insertAnn = db.prepare(
+    `INSERT INTO announcements (title, content, level, enabled, publisher) VALUES (?, ?, ?, 1, '系统')`
+  );
+  insertAnn.run(
+    '欢迎使用 IoT 物联网管理平台',
+    '平台已上线系统公告功能，重要通知将在此发布。可在「我的 → 服务器设置」中配置后端地址。',
+    'info'
+  );
+  insertAnn.run(
+    '固件升级规范提醒',
+    '发布新固件前请确认已在固件页上传并完成兼容性校验；升级任务建议先灰度小批量设备，观察升级成功率后再全量推送。',
+    'major'
+  );
+  console.log('[db] 公告种子已补齐（2 条示例公告）');
+}
+
+
+
 /**
  * 告警规则种子补齐（幂等）：alert_rules 表为空时插入 3 条默认规则。
  * 与设备/固件种子不同，规则表新建即空，老库升级也应补齐，因此独立执行。

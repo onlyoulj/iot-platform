@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+db/iot.db
+db/iot.db-shm
+db/iot.db-wal
+uploads
+config.json
+Dockerfile
+docker-compose.yml
+.dockerignore
+*.md
+.git

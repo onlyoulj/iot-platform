@@ -1,23 +1,12 @@
 import { Router } from 'express';
 import multer from 'multer';
 import crypto from 'crypto';
-import fs from 'fs';
-import { join, extname } from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import { extname } from 'path';
 import db from '../db/init.js';
 import { authenticate, requirePermission } from '../services/auth.js';
+import { putFile, getFile, fileExists, deleteFile } from '../services/storage.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const storage = multer.diskStorage({
-  destination: join(__dirname, '../uploads/firmware'),
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + extname(file.originalname));
-  }
-});
-const upload = multer({ storage, limits: { fileSize: 500 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
 const router = Router();
 
@@ -59,19 +48,23 @@ router.get('/:id', canView, (req, res) => {
 });
 
 // 上传固件
-router.post('/upload', canManage, upload.single('file'), (req, res) => {
+router.post('/upload', canManage, upload.single('file'), async (req, res) => {
   try {
     const { name, version, product_id, product_name, desc, sign_algo } = req.body;
     if (!name || !version || !product_name) return res.json({ code: 400, message: '缺少必填字段' });
 
     const file = req.file;
     const fileSize = file ? `${(file.size / (1024 * 1024)).toFixed(1)} MB` : '0';
-    const filePath = file ? file.filename : '';
+
+    // 文件名规则与历史一致：时间戳-随机数.扩展名（数据库 file_path 只存文件名）
+    const filePath = file
+      ? `${Date.now()}-${Math.round(Math.random() * 1e9)}${extname(file.originalname)}`
+      : '';
 
     let md5Hash = '';
     if (file) {
-      const fileBuffer = fs.readFileSync(file.path);
-      md5Hash = crypto.createHash('md5').update(fileBuffer).digest('hex');
+      md5Hash = crypto.createHash('md5').update(file.buffer).digest('hex');
+      await putFile('firmware', filePath, file.buffer);
     }
 
     const id = `FW-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(Date.now()).slice(-3)}`;
@@ -108,9 +101,26 @@ router.post('/:id/deprecate', canManage, (req, res) => {
 });
 
 // 删除
-router.delete('/:id', canManage, (req, res) => {
+router.delete('/:id', canManage, async (req, res) => {
   const ids = req.params.id.split(',');
   const placeholders = ids.map(() => '?').join(',');
+  // 被 OTA 任务引用的固件有外键约束（ota_tasks.firmware_id），先查出来给明确提示
+  const referenced = db
+    .prepare(`SELECT DISTINCT firmware_id FROM ota_tasks WHERE firmware_id IN (${placeholders})`)
+    .all(...ids)
+    .map((r) => r.firmware_id);
+  if (referenced.length) {
+    return res.json({ code: 400, message: `固件已被 OTA 升级任务引用，无法删除（如 ${referenced.join('、')}）。请先删除对应升级任务` });
+  }
+  // 删除关联的固件文件（存储失败不阻塞记录删除）
+  const files = db.prepare(`SELECT file_path FROM firmwares WHERE id IN (${placeholders}) AND file_path != ''`).all(...ids);
+  for (const f of files) {
+    try {
+      await deleteFile('firmware', f.file_path);
+    } catch (err) {
+      console.warn('[firmware] 删除存储文件失败:', f.file_path, err.message);
+    }
+  }
   db.prepare(`DELETE FROM firmware_compat WHERE firmware_id IN (${placeholders})`).run(...ids);
   db.prepare(`DELETE FROM firmwares WHERE id IN (${placeholders})`).run(...ids);
   res.json({ code: 0, message: '删除成功' });

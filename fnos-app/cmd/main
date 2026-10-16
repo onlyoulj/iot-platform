@@ -1,0 +1,84 @@
+#!/bin/bash
+# ============================================================
+# IoT 平台主控制脚本：start / stop / status
+# 应用结构：app/server 为后端 + 内嵌管理端静态文件（server/public）
+# 数据目录：$TRIM_PKGVAR（SQLite 数据库、uploads、config.json 副本）
+# ============================================================
+export PATH=/var/apps/nodejs_v22/target/bin:$PATH
+
+APP_DIR="${TRIM_APPDEST}/app/server"
+VAR_DIR="${TRIM_PKGVAR}"
+LOG_FILE="${VAR_DIR}/iot-server.log"
+PID_FILE="${VAR_DIR}/iot-server.pid"
+PORT="${IOT_PORT:-3210}"
+
+ensure_runtime_dirs() {
+  mkdir -p "$VAR_DIR/db" "$VAR_DIR/uploads/firmware" "$VAR_DIR/uploads/avatars"
+  # 首次安装：把随包默认配置放入 var（后续升级不覆盖用户配置）
+  if [ ! -f "$VAR_DIR/config.json" ] && [ -f "$APP_DIR/config.default.json" ]; then
+    cp "$APP_DIR/config.default.json" "$VAR_DIR/config.json"
+  fi
+  # 数据/配置软链约定：db 与 uploads 重定向到 var（持久化）
+  if [ ! -e "$APP_DIR/db/iot.db" ] && [ ! -L "$APP_DIR/db" ]; then
+    rm -rf "$APP_DIR/db"
+    ln -s "$VAR_DIR/db" "$APP_DIR/db"
+  fi
+  if [ ! -L "$APP_DIR/uploads" ]; then
+    rm -rf "$APP_DIR/uploads"
+    ln -s "$VAR_DIR/uploads" "$APP_DIR/uploads"
+  fi
+  # config.json 读取路径：config-store.js 读 app 目录下的 config.json
+  if [ ! -e "$APP_DIR/config.json" ]; then
+    ln -s "$VAR_DIR/config.json" "$APP_DIR/config.json"
+  fi
+}
+
+is_running() {
+  [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null
+}
+
+case "$1" in
+  start)
+    ensure_runtime_dirs
+    if is_running; then
+      exit 0
+    fi
+    cd "$APP_DIR" || exit 1
+    # 无 node_modules 则安装生产依赖（首次安装/升级后）
+    if [ ! -d "$APP_DIR/node_modules" ]; then
+      npm ci --omit=dev >> "$LOG_FILE" 2>&1 || {
+        echo "依赖安装失败，详见 $LOG_FILE" > "$TRIM_TEMP_LOGFILE"
+        exit 1
+      }
+    fi
+    PORT="$PORT" nohup node index.js >> "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+    # 等待端口就绪（最多 15s）
+    for i in $(seq 1 15); do
+      if node -e "fetch('http://127.0.0.1:${PORT}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" 2>/dev/null; then
+        exit 0
+      fi
+      sleep 1
+    done
+    echo "服务启动超时，详见 $LOG_FILE" > "$TRIM_TEMP_LOGFILE"
+    exit 1
+    ;;
+  stop)
+    if is_running; then
+      kill "$(cat "$PID_FILE")" 2>/dev/null
+      sleep 1
+      kill -9 "$(cat "$PID_FILE")" 2>/dev/null
+    fi
+    rm -f "$PID_FILE"
+    exit 0
+    ;;
+  status)
+    if is_running; then
+      exit 0
+    fi
+    exit 3
+    ;;
+  *)
+    exit 1
+    ;;
+esac

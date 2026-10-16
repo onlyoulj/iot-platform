@@ -1,6 +1,13 @@
 <template>
   <view class="dash">
-    <scroll-view scroll-y class="scroll" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
+    <scroll-view
+      scroll-y
+      class="scroll"
+      refresher-enabled
+      :refresher-triggered="refreshing"
+      :refresher-threshold="80"
+      @refresherrefresh="onRefresh"
+    >
       <!-- 用户问候 -->
       <view class="hello card">
         <view class="hello-left">
@@ -12,6 +19,17 @@
           </view>
         </view>
         <text class="hello-badge" :class="{ ok: serverOk }">{{ serverOk ? '在线' : '检查中' }}</text>
+      </view>
+
+      <!-- 未读公告滚动条（无未读隐藏） -->
+      <view class="notice-bar" v-if="annUnread > 0" @click="go('/pages/announcements/announcements')">
+        <text class="notice-ico">📢</text>
+        <view class="notice-track">
+          <view class="notice-scroll">
+            <text class="notice-item" v-for="(n, i) in marqueeList" :key="i">{{ n.title }}</text>
+          </view>
+        </view>
+        <text class="notice-count">{{ annUnread > 99 ? '99+' : annUnread }} 条未读</text>
       </view>
 
       <!-- 统计卡（可点击跳转） -->
@@ -52,7 +70,10 @@
         <text class="card-title">快捷操作</text>
         <view class="quick-grid">
           <view class="quick-item" v-for="q in quickList" :key="q.path" @click="go(q.path)">
-            <text class="q-emoji">{{ q.icon }}</text>
+            <view class="q-icon-wrap">
+              <text class="q-emoji" :class="{ shake: q.key === 'announcement' && annUnread > 0 }">{{ q.icon }}</text>
+              <text v-if="q.key === 'announcement' && annUnread > 0" class="q-badge">{{ annUnread > 99 ? '99+' : annUnread }}</text>
+            </view>
             <text>{{ q.label }}</text>
           </view>
         </view>
@@ -64,7 +85,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { dashboardApi, staticUrl } from '../../utils/api'
+import { dashboardApi, announcementApi, staticUrl } from '../../utils/api'
 
 const user = ref(uni.getStorageSync('user'))
 const avatarChar = computed(() => String(user.value?.nickname || user.value?.username || '用').slice(0, 1).toUpperCase())
@@ -73,6 +94,8 @@ const stats = ref({})
 const trend = ref([])
 const days = ref(7)
 const refreshing = ref(false)
+const annUnread = ref(0)
+const unreadNotices = ref([])
 const serverOk = ref(false)
 const bubble = ref('')
 let bubbleTimer = null
@@ -89,10 +112,19 @@ const quickList = [
   { icon: '🔔', label: '告警', path: '/pages/alerts/alerts' },
   { icon: '📦', label: '固件', path: '/pages/firmware/firmware' },
   { icon: '🚀', label: 'OTA', path: '/pages/ota/ota' },
+  { key: 'announcement', icon: '📢', label: '公告', path: '/pages/announcements/announcements' },
   { icon: '🖥️', label: '服务器', path: '/pages/profile/server' },
   { icon: '🔑', label: '改密码', path: '/pages/profile/password' },
   { icon: '👤', label: '我的', path: '/pages/profile/profile' },
 ]
+
+// 跑马灯内容：未读公告重复两遍实现无缝循环
+const marqueeList = computed(() => {
+  const items = unreadNotices.value
+  if (!items.length) return []
+  // 只有一条时重复 4 次保证滚动连贯
+  return items.length === 1 ? Array(4).fill(items[0]) : [...items, ...items]
+})
 
 const maxOnline = computed(() => Math.max(1, ...trend.value.map((t) => t.online)))
 function barHeight(v) {
@@ -108,11 +140,28 @@ async function load() {
   } catch (e) {
     serverOk.value = false
   }
+  // 公告未读数与未读标题（需 announcement:view，失败静默归零）
+  try {
+    const [u, lst] = await Promise.all([
+      announcementApi.unread(),
+      announcementApi.list({ status: 'unread', page: 1, pageSize: 5 }),
+    ])
+    annUnread.value = u?.unread ?? 0
+    unreadNotices.value = lst?.list || []
+  } catch (e) {
+    annUnread.value = 0
+    unreadNotices.value = []
+  }
 }
 
 async function onRefresh() {
   refreshing.value = true
-  await load()
+  // 数据请求与动画并行；无论请求多快都保底 900ms，让收起动画从容不突兀
+  const [t] = await Promise.all([
+    load(),
+    new Promise((r) => setTimeout(r, 900)),
+  ])
+  void t
   refreshing.value = false
 }
 
@@ -129,17 +178,13 @@ onShow(load)
 
 function go(url) {
   // tabBar 页用 switchTab，非 tabBar 用 navigateTo
-  const tabBarPaths = ['/pages/dashboard/dashboard', '/pages/devices/devices', '/pages/alerts/alerts', '/pages/profile/profile']
+  const tabBarPaths = ['/pages/dashboard/dashboard', '/pages/devices/devices', '/pages/product/product', '/pages/alerts/alerts', '/pages/profile/profile']
   const base = url.split('?')[0]
   if (tabBarPaths.includes(base)) {
-    if (base !== '/pages/dashboard/dashboard') {
-      uni.switchTab({ url: base })
-      // 带参数的跳转：先切 tab，下一帧通过 eventChannel 或全局变量传递
-      if (url.includes('?')) {
-        // switchTab 不带参数，用全局临时变量
-        uni.$once('tabReady', () => {})
-        globalThis.__pendingFilter = url.split('?')[1]
-      }
+    uni.switchTab({ url: base })
+    // 带参数的跳转：switchTab 不带参数，用全局临时变量传递
+    if (url.includes('?')) {
+      globalThis.__pendingFilter = url.split('?')[1]
     }
   } else {
     uni.navigateTo({ url })
@@ -321,7 +366,83 @@ function go(url) {
 .quick-item:active {
   opacity: 0.6;
 }
+.q-icon-wrap {
+  position: relative;
+}
 .q-emoji {
   font-size: 44rpx;
 }
+.q-badge {
+  position: absolute;
+  top: -10rpx;
+  right: -22rpx;
+  min-width: 32rpx;
+  height: 32rpx;
+  line-height: 32rpx;
+  padding: 0 8rpx;
+  border-radius: 16rpx;
+  background: #f0654f;
+  color: #ffffff;
+  font-size: 18rpx;
+  text-align: center;
+  box-sizing: border-box;
+}
+/* 公告有未读时图标抖动 */
+.shake {
+  animation: q-shake 0.6s ease-in-out infinite;
+  transform-origin: 50% 60%;
+  display: inline-block;
+}
+.notice-bar {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  background: #fff8e8;
+  border: 1rpx solid #ffe3ad;
+  border-radius: 16rpx;
+  padding: 18rpx 24rpx;
+  margin: 0 24rpx 20rpx;
+}
+.notice-ico {
+  font-size: 32rpx;
+  flex-shrink: 0;
+}
+.notice-track {
+  flex: 1;
+  overflow: hidden;
+  height: 40rpx;
+  position: relative;
+}
+.notice-scroll {
+  position: absolute;
+  white-space: nowrap;
+  animation: notice-marquee 14s linear infinite;
+}
+.notice-item {
+  font-size: 24rpx;
+  color: #b26b00;
+  margin-right: 80rpx;
+  line-height: 40rpx;
+}
+.notice-count {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: #b26b00;
+  background: #ffe3ad;
+  border-radius: 20rpx;
+  padding: 4rpx 16rpx;
+}
+@keyframes notice-marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@keyframes q-shake {
+  0%, 100% { transform: rotate(0deg); }
+  15% { transform: rotate(-14deg); }
+  30% { transform: rotate(12deg); }
+  45% { transform: rotate(-10deg); }
+  60% { transform: rotate(8deg); }
+  75% { transform: rotate(-4deg); }
+}
 </style>
+

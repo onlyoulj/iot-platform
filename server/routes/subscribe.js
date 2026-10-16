@@ -33,17 +33,13 @@
  */
 import { Router } from 'express';
 import crypto from 'crypto';
-import fs from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { fileExists, getFileStream } from '../services/storage.js';
 import db from '../db/init.js';
 import { authenticate, requirePermission } from '../services/auth.js';
 import { emit as sseEmit, registerSse } from '../services/push.js';
 import redis from '../services/redis.js';
 import mqtt from '../services/mqtt.js';
 import { applyDeviceInfo } from '../services/device-info.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const router = Router();
 
@@ -57,9 +53,6 @@ const REQUIRE_TOKEN = String(process.env.SUBSCRIBE_REQUIRE_TOKEN ?? 'true').toLo
 
 /** 对外可达的服务地址（如 http://192.168.1.100:3000），留空则由请求头推断 */
 const PUBLIC_BASE_URL = (process.env.SUBSCRIBE_BASE_URL || '').replace(/\/+$/, '');
-
-/** 固件文件存放目录（与 firmware.js 的 multer destination 保持一致） */
-const FIRMWARE_DIR = join(__dirname, '../uploads/firmware');
 
 const FIRMWARE_STATUS_TEXT = {
   draft: '未发布',
@@ -297,12 +290,12 @@ const JOB_STATUS_TEXT = {
  * 为某个 job 构造下发给设备的升级指令
  * 复用固件信息体，附上任务约束（重试 / 超时 / 策略）
  */
-function buildUpgradeCommand(job, baseUrl) {
+async function buildUpgradeCommand(job, baseUrl) {
   const task = db.prepare('SELECT * FROM ota_tasks WHERE id = ?').get(job.task_id);
   const firmware = task?.firmware_id
     ? db.prepare('SELECT * FROM firmwares WHERE id = ?').get(task.firmware_id)
     : null;
-  const fwPayload = firmware ? buildFirmwarePayload(firmware, baseUrl, job.device_id) : null;
+  const fwPayload = firmware ? await buildFirmwarePayload(firmware, baseUrl, job.device_id) : null;
 
   return {
     task_id: job.task_id,
@@ -340,9 +333,15 @@ function deliverPendingUpgrades(device, baseUrl) {
   const commands = [];
   for (const job of jobs) {
     markPushed.run(now, job.id);
-    commands.push(buildUpgradeCommand({ ...job, pushed_at: job.pushed_at || now }, baseUrl));
+    commands.push(
+      buildUpgradeCommand({ ...job, pushed_at: job.pushed_at || now }, baseUrl).catch((err) => {
+        console.warn('[subscribe] 构造升级指令失败:', err.message);
+        return null;
+      })
+    );
   }
-  return commands;
+  // buildFirmwarePayload 需要异步探测文件存在性，统一等齐后过滤失败项
+  return Promise.all(commands).then((list) => list.filter(Boolean));
 }
 
 /**
@@ -388,10 +387,9 @@ function recomputeTaskStats(taskId) {
  * @param {string} baseUrl 对外基础地址
  * @param {number} deviceId 用于生成下载 token
  */
-function buildFirmwarePayload(firmware, baseUrl, deviceId) {
+async function buildFirmwarePayload(firmware, baseUrl, deviceId) {
   const filePath = firmware.file_path || '';
-  const absolutePath = filePath ? join(FIRMWARE_DIR, filePath) : '';
-  const fileAvailable = Boolean(filePath) && fs.existsSync(absolutePath);
+  const fileAvailable = await fileExists('firmware', filePath);
 
   const token = buildToken(deviceId);
   return {
@@ -416,7 +414,7 @@ function buildFirmwarePayload(firmware, baseUrl, deviceId) {
     download_url: fileAvailable
       ? `${baseUrl}/api/subscribe/${deviceId}/download?token=${token}`
       : null,
-    /** 文件静态直链（可直接给支持 HTTP 下载的模块使用） */
+    /** 文件静态直链（可直接给支持 HTTP 下载的模块使用；oss 模式由后端代理回源） */
     direct_url: fileAvailable ? `${baseUrl}/uploads/firmware/${filePath}` : null,
   };
 }
@@ -431,7 +429,7 @@ function buildFirmwarePayload(firmware, baseUrl, deviceId) {
  *   current_version 设备当前运行的固件版本（可选，不传则取设备档案）
  *   base            指定对外基础地址（可选，用于生成直链）
  */
-router.get('/:key', (req, res) => {
+router.get('/:key', async (req, res) => {
   const device = findDevice(req.params.key);
   if (!device) {
     return res.status(404).json({ code: 404, message: '设备不存在，请检查 DeviceName 或设备 ID' });
@@ -493,7 +491,7 @@ router.get('/:key', (req, res) => {
       /** 待执行的升级任务（任务创建后主动推送，离线设备上线后补推） */
       pending_upgrades: pendingUpgrades,
       /** 该产品下最新的已发布固件（无可用固件时为 null） */
-      latest: latest ? buildFirmwarePayload(latest, baseUrl, device.id) : null,
+      latest: latest ? await buildFirmwarePayload(latest, baseUrl, device.id) : null,
       /** 该产品下全部已发布固件，按版本降序，便于设备做灰度或回滚 */
       available_versions: published.map((fw) => ({
         id: fw.id,
@@ -504,7 +502,7 @@ router.get('/:key', (req, res) => {
         md5: fw.md5,
         changelog: fw.desc,
         released_at: fw.created_at,
-        download_url: buildFirmwarePayload(fw, baseUrl, device.id).download_url,
+        download_url: `${baseUrl}/api/subscribe/${device.id}/download?token=${buildToken(device.id)}&version=${fw.version}`,
       })),
       /** 升级兼容性约束 */
       compat,
@@ -529,7 +527,7 @@ router.get('/:key', (req, res) => {
  * query:
  *   base 指定对外基础地址（可选，如 http://192.168.1.100:3000）
  */
-router.get('/:key/link', authenticate, requirePermission('device:view'), (req, res) => {
+router.get('/:key/link', authenticate, requirePermission('device:view'), async (req, res) => {
   const device = findDevice(req.params.key);
   if (!device) return res.json({ code: 404, message: '设备不存在' });
 
@@ -539,7 +537,7 @@ router.get('/:key/link', authenticate, requirePermission('device:view'), (req, r
 
   const latest = findLatestFirmware(device.product_name);
   const currentVersion = String(device.firmware_version || '');
-  const payload = latest ? buildFirmwarePayload(latest, baseUrl, device.id) : null;
+  const payload = latest ? await buildFirmwarePayload(latest, baseUrl, device.id) : null;
 
   res.json({
     code: 0,
@@ -600,7 +598,7 @@ router.get('/:key/link', authenticate, requirePermission('device:view'), (req, r
  *   token       订阅凭证
  *   version     指定版本（可选，缺省为最新）
  */
-router.get('/:key/download', (req, res) => {
+router.get('/:key/download', async (req, res) => {
   const device = findDevice(req.params.key);
   if (!device) return res.status(404).json({ code: 404, message: '设备不存在' });
   if (!verifyToken(req, device)) {
@@ -608,7 +606,7 @@ router.get('/:key/download', (req, res) => {
   }
 
   const candidates = listPublishedFirmwares(device.product_name);
-  const wanted = req.query.version ? String(req.query.version) : '';
+  const wanted = req.query.version ? String(req.query.version).replace(/^[vV]/, '') : '';
   const firmware = wanted
     ? candidates.find((fw) => compareVersion(fw.version, wanted) === 0)
     : candidates[0];
@@ -620,13 +618,20 @@ router.get('/:key/download', (req, res) => {
     });
   }
 
-  const absolutePath = firmware.file_path ? join(FIRMWARE_DIR, firmware.file_path) : '';
-  if (!absolutePath || !fs.existsSync(absolutePath)) {
+  const file = await getFileStream('firmware', firmware.file_path);
+  if (!file) {
     return res.status(404).json({ code: 404, message: '固件文件缺失，请重新上传后再下发' });
   }
 
   // 设备侧文件名为保证兼容性统一使用 ASCII
-  res.download(absolutePath, `${firmware.id}-${normalizeVersion(firmware.version).join('.')}.bin`);
+  const downloadName = `${firmware.id}-${normalizeVersion(firmware.version).join('.')}.bin`;
+  res.setHeader(
+    'Content-Type',
+    'application/octet-stream'
+  );
+  res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
+  if (file.size) res.setHeader('Content-Length', file.size);
+  file.stream.pipe(res);
 });
 
 /* ============================ 设备侧：SSE 实时推送 ============================ */
@@ -640,7 +645,7 @@ router.get('/:key/download', (req, res) => {
  * query:
  *   token  订阅凭证（与订阅接口同一套鉴权）
  */
-router.get('/:key/events', (req, res) => {
+router.get('/:key/events', async (req, res) => {
   const device = findDevice(req.params.key);
   if (!device) {
     return res.status(404).json({ code: 404, message: '设备不存在' });
@@ -662,7 +667,7 @@ router.get('/:key/events', (req, res) => {
 
   // 同时捎带当前积压的升级指令（设备刚连上就补推一次）
   const baseUrl = resolveBaseUrl(req);
-  const pending = deliverPendingUpgrades(device, baseUrl);
+  const pending = await deliverPendingUpgrades(device, baseUrl);
   for (const cmd of pending) {
     res.write(`event: upgrade\ndata: ${JSON.stringify(cmd)}\n\n`);
   }
