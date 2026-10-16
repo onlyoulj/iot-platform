@@ -27,6 +27,19 @@
       }
     },
     {
+      "path": "pages/product/detail",
+      "style": {
+        "navigationBarTitleText": "产品详情"
+      }
+    },
+    {
+      "path": "pages/product/product",
+      "style": {
+        "navigationBarTitleText": "产品",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
       "path": "pages/alerts/alerts",
       "style": {
         "navigationBarTitleText": "告警",
@@ -66,6 +79,7 @@
     "list": [
       { "pagePath": "pages/dashboard/dashboard", "text": "概览", "iconPath": "static/tab/home.png", "selectedIconPath": "static/tab/home-on.png" },
       { "pagePath": "pages/devices/devices", "text": "设备", "iconPath": "static/tab/device.png", "selectedIconPath": "static/tab/device-on.png" },
+      { "pagePath": "pages/product/product", "text": "产品", "iconPath": "static/tab/cube.png", "selectedIconPath": "static/tab/cube-on.png" },
       { "pagePath": "pages/alerts/alerts", "text": "告警", "iconPath": "static/tab/alert.png", "selectedIconPath": "static/tab/alert-on.png" },
       { "pagePath": "pages/profile/profile", "text": "我的", "iconPath": "static/tab/user.png", "selectedIconPath": "static/tab/user-on.png" }
     ]

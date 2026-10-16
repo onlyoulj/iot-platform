@@ -24,6 +24,11 @@ export function getBaseUrl() {
   return uni.getStorageSync(STORAGE_KEY) || DEFAULT_BASE_URL
 }
 
+/** 读取当前登录 token（固件上传等不走 request.js 的场景使用） */
+export function getToken() {
+  return uni.getStorageSync('token') || ''
+}
+
 export function setBaseUrl(url) {
   const trimmed = String(url || '').trim().replace(/\/+$/, '')
   if (trimmed) {

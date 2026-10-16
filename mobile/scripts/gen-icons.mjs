@@ -67,6 +67,23 @@ const shapes = {
     inCircle(40, 12, 4),
   ),
   user: union(inCircle(40, 27, 14), (x, y) => y >= 46 && y <= 70 && (x - 40) ** 2 / 28 ** 2 + (y - 74) ** 2 / 30 ** 2 <= 1),
+  // 产品（立方体等距投影）：顶面 + 左面 + 右面（中缝留 2px 视觉分隔）
+  cube: (x, y) => {
+    const cx = 40, topY = 12, midY = 40, botY = 68, halfW = 26
+    // 顶面菱形
+    if (y >= topY && y <= midY) {
+      const spread = ((y - topY) / (midY - topY)) * halfW
+      if (Math.abs(x - cx) <= spread) return true
+    }
+    // 下半部：左右两个侧面梯形，从顶面底边两端收拢到中底点
+    if (y > midY && y <= botY) {
+      const t = (y - midY) / (botY - midY) // 0→1
+      const shrink = halfW * t
+      if (x >= cx - halfW && x <= cx - 1 - shrink) return true   // 左侧面
+      if (x >= cx + 1 + shrink && x <= cx + halfW) return true   // 右侧面
+    }
+    return false
+  },
 }
 // home 补门洞
 shapes.home = minus(shapes.home, inRect(33, 50, 47, 68))

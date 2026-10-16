@@ -19,6 +19,7 @@ db.exec(`
     desc TEXT DEFAULT '',
     icon TEXT DEFAULT 'Box',
     color TEXT DEFAULT 'linear-gradient(135deg, #667eea, #764ba2)',
+    owner_id INTEGER DEFAULT NULL,
     created_at DATETIME DEFAULT (datetime('now','localtime'))
   );
 
@@ -71,6 +72,7 @@ db.exec(`
     latitude REAL DEFAULT NULL,
     info_updated_at DATETIME DEFAULT NULL,
     group_id INTEGER DEFAULT NULL,
+    owner_id INTEGER DEFAULT NULL,
     last_online DATETIME,
     active_time DATETIME,
     created_at DATETIME DEFAULT (datetime('now','localtime')),
@@ -285,6 +287,8 @@ db.exec(`
     nickname TEXT DEFAULT '',
     email TEXT DEFAULT '',
     phone TEXT DEFAULT '',
+    avatar TEXT DEFAULT '',
+    points INTEGER NOT NULL DEFAULT 10,
     group_id INTEGER,
     status TEXT DEFAULT 'active',
     last_login DATETIME,
@@ -361,6 +365,43 @@ function migrateJobColumns() {
   }
 }
 migrateJobColumns();
+
+/**
+ * 用户/设备归属改造迁移（幂等）：
+ * - users.points    用户积分（默认 10，管理员可改）
+ * - users.avatar    用户头像文件名（空 = 使用默认头像）
+ * - devices.owner_id 设备归属用户 id（NULL = 未归属，仅管理员可见）
+ * 老库升级自动补列，新库建表即含。
+ */
+function migrateUserDeviceColumns() {
+  const userCols = new Set(
+    db.prepare('PRAGMA table_info(users)').all().map((c) => c.name)
+  );
+  if (!userCols.has('points')) {
+    db.exec('ALTER TABLE users ADD COLUMN points INTEGER NOT NULL DEFAULT 10');
+    console.log('[db] users 表新增字段: points（默认 10）');
+  }
+  if (!userCols.has('avatar')) {
+    db.exec("ALTER TABLE users ADD COLUMN avatar TEXT DEFAULT ''");
+    console.log('[db] users 表新增字段: avatar');
+  }
+  const deviceCols = new Set(
+    db.prepare('PRAGMA table_info(devices)').all().map((c) => c.name)
+  );
+  if (!deviceCols.has('owner_id')) {
+    db.exec('ALTER TABLE devices ADD COLUMN owner_id INTEGER DEFAULT NULL');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_devices_owner ON devices(owner_id)');
+    console.log('[db] devices 表新增字段: owner_id（设备归属用户）');
+  }
+  const productCols = new Set(
+    db.prepare('PRAGMA table_info(products)').all().map((c) => c.name)
+  );
+  if (!productCols.has('owner_id')) {
+    db.exec('ALTER TABLE products ADD COLUMN owner_id INTEGER DEFAULT NULL');
+    console.log('[db] products 表新增字段: owner_id（产品归属用户）');
+  }
+}
+migrateUserDeviceColumns();
 
 /**
  * alerts 表迁移：新增 rule_id 列（关联告警规则引擎，可空，兼容人工告警）

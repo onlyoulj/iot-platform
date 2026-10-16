@@ -2,12 +2,14 @@
  * 用户管理接口（需 user:* 权限）
  * ------------------------------------------------------------------
  *   GET    /api/users            列表（分页 + 用户名/用户组/状态筛选）
- *   POST   /api/users            新增用户
+ *   POST   /api/users            新增用户（初始积分 10）
+ *   GET    /api/users/meta/groups   用户组下拉选项
  *   GET    /api/users/:id        详情
  *   PUT    /api/users/:id        编辑（昵称/邮箱/手机/用户组/状态）
  *   PUT    /api/users/:id/password  管理员重置密码
+ *   PUT    /api/users/:id/points    管理员修改积分
+ *   POST   /api/users/avatar        用户上传自己的头像（multipart，字段 file）
  *   DELETE /api/users/:id        删除（不能删自己、不能删最后一个超管）
- *   GET    /api/users/meta/groups   用户组下拉选项
  *
  * 越权防护：
  * 1. 所有写操作都要求 user:manage 权限；
@@ -16,11 +18,17 @@
  * 3. 删除/禁用操作保护：不能操作自己，且系统必须至少保留一个可用的超管。
  */
 import { Router } from 'express';
+import multer from 'multer';
+import fs from 'fs';
+import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 import db from '../db/index-core.js';
 import { hashPassword } from '../db/auth-schema.js';
 import { authenticate, requirePermission, findUserById, buildAuthProfile } from '../services/auth.js';
 import { getOnlineUserIds, ACTION_LABELS } from '../services/user-activity.js';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const router = Router();
 
 router.use(authenticate);
@@ -96,6 +104,7 @@ router.get('/', requirePermission('user:view'), (req, res) => {
   const rows = db
     .prepare(
       `SELECT u.id, u.username, u.nickname, u.email, u.phone, u.status, u.group_id,
+              u.points, u.avatar,
               u.last_login, u.created_at, g.name AS group_name, g.code AS group_code
        FROM users u LEFT JOIN user_groups g ON g.id = u.group_id
        ${whereSql}
@@ -103,7 +112,8 @@ router.get('/', requirePermission('user:view'), (req, res) => {
     )
     .all(...params, pageSize, (page - 1) * pageSize);
 
-  res.json({ code: 0, message: 'ok', data: { list: rows, total, page, pageSize } });
+  const list = rows.map((r) => ({ ...r, avatar_url: r.avatar ? `/uploads/avatars/${r.avatar}` : '' }));
+  res.json({ code: 0, message: 'ok', data: { list, total, page, pageSize } });
 });
 
 router.get('/meta/groups', requirePermission('user:view', 'group:view'), (req, res) => {
@@ -277,8 +287,8 @@ router.post('/', requirePermission('user:manage'), (req, res) => {
   const { hash, salt } = hashPassword(password);
   const info = db
     .prepare(
-      `INSERT INTO users (username, password_hash, salt, nickname, email, phone, group_id, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO users (username, password_hash, salt, nickname, email, phone, group_id, status, points)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 10)`
     )
     .run(username, hash, salt, nickname || username, email, phone, groupId, status);
 
@@ -367,6 +377,75 @@ router.put('/:id/password', requirePermission('user:manage'), (req, res) => {
   const { hash, salt } = hashPassword(password);
   db.prepare('UPDATE users SET password_hash = ?, salt = ? WHERE id = ?').run(hash, salt, id);
   res.json({ code: 0, message: '密码已重置', data: null });
+});
+
+/* ============================ 积分管理 ============================ */
+
+/**
+ * PUT /api/users/:id/points —— 管理员修改指定用户积分
+ * body: { points: number }（0-1000000 整数；直接设值，不做增减语义）
+ */
+router.put('/:id/points', requirePermission('user:manage'), (req, res) => {
+  const id = Number(req.params.id);
+  const target = findUserById(id);
+  if (!target) return res.status(404).json({ code: 404, message: '用户不存在' });
+
+  const points = Number(req.body?.points);
+  if (!Number.isInteger(points) || points < 0 || points > 1000000) {
+    return res.status(400).json({ code: 400, message: '积分必须是 0-1000000 之间的整数' });
+  }
+  if (target.group_code === SUPER_ADMIN_CODE && req.user.group_code !== SUPER_ADMIN_CODE) {
+    return res.status(403).json({ code: 403, message: '只有超级管理员可以修改超级管理员积分' });
+  }
+
+  db.prepare('UPDATE users SET points = ? WHERE id = ?').run(points, id);
+  res.json({ code: 0, message: '积分已更新', data: buildAuthProfile(findUserById(id)) });
+});
+
+/* ============================ 头像 ============================ */
+
+const AVATAR_DIR = join(__dirname, '../uploads/avatars');
+fs.mkdirSync(AVATAR_DIR, { recursive: true });
+
+const AVATAR_MIME = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+};
+const AVATAR_MAX_SIZE = 5 * 1024 * 1024; // 5MB
+
+/** multer 内存存储：头像小文件，校验通过后写入 uploads/avatars */
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: AVATAR_MAX_SIZE },
+  fileFilter: (req, file, cb) => cb(null, !!AVATAR_MIME[file.mimetype]),
+});
+
+/**
+ * POST /api/users/avatar —— 用户上传自己的头像
+ * multipart/form-data，字段名 file；成功后旧头像文件被删除，返回新的 avatar_url。
+ */
+router.post('/avatar', avatarUpload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ code: 400, message: '请上传图片文件（jpg/png/gif/webp，≤5MB）' });
+  }
+  const ext = AVATAR_MIME[req.file.mimetype] || '.jpg';
+  const filename = `u${req.user.id}-${Date.now()}${ext}`;
+  fs.writeFileSync(join(AVATAR_DIR, filename), req.file.buffer);
+
+  // 删除旧头像文件（失败不阻塞：文件可能已被手动清理）
+  const old = db.prepare('SELECT avatar FROM users WHERE id = ?').get(req.user.id)?.avatar;
+  if (old) {
+    try { fs.unlinkSync(join(AVATAR_DIR, old)); } catch { /* 旧文件不存在则忽略 */ }
+  }
+
+  db.prepare('UPDATE users SET avatar = ? WHERE id = ?').run(filename, req.user.id);
+  res.json({
+    code: 0,
+    message: '头像已更新',
+    data: { avatar: filename, avatar_url: `/uploads/avatars/${filename}` },
+  });
 });
 
 /* ============================ 删除 ============================ */

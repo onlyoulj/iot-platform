@@ -155,4 +155,7 @@ request.del = (url, options) => request(url, { ...options, method: 'DELETE' })
 request.upload = (url, formData, options) =>
   request(url, { ...options, method: 'POST', data: formData, isForm: true, timeout: 120000 })
 
+/** 静态资源地址（/uploads/**），生产/自定义 API 域名时指向后端主机 */
+request.staticUrl = (path) => `${BASE_URL.replace(/\/api$/, '')}${path}`
+
 export default request

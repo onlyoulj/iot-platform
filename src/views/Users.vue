@@ -39,13 +39,25 @@
         <el-card shadow="never">
           <el-table :data="list" v-loading="loading" stripe>
             <el-table-column prop="id" label="ID" width="70" />
-            <el-table-column prop="username" label="用户名" min-width="130">
+            <el-table-column label="用户" min-width="160">
               <template #default="{ row }">
-                <span class="mono">{{ row.username }}</span>
-                <el-tag v-if="row.id === currentUser?.id" size="small" type="success" class="self-tag">我</el-tag>
+                <div class="user-cell">
+                  <el-avatar :size="32" :src="row.avatar_url || undefined">
+                    {{ (row.nickname || row.username || '?').slice(0, 1).toUpperCase() }}
+                  </el-avatar>
+                  <div class="user-cell-meta">
+                    <span class="mono">{{ row.username }}</span>
+                    <span class="user-cell-name">{{ row.nickname || '--' }}</span>
+                  </div>
+                  <el-tag v-if="row.id === currentUser?.id" size="small" type="success" class="self-tag">我</el-tag>
+                </div>
               </template>
             </el-table-column>
-            <el-table-column prop="nickname" label="昵称" min-width="120" show-overflow-tooltip />
+            <el-table-column label="积分" width="110">
+              <template #default="{ row }">
+                <el-tag effect="plain" type="warning">{{ row.points ?? 10 }}</el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="用户组" min-width="130">
               <template #default="{ row }">
                 <el-tag :type="row.group_code === 'super_admin' ? 'danger' : row.group_code === 'ops_admin' ? 'primary' : 'info'">
@@ -63,9 +75,10 @@
               </template>
             </el-table-column>
             <el-table-column prop="last_login" label="最后登录" min-width="160" />
-            <el-table-column label="操作" width="240" fixed="right">
+            <el-table-column label="操作" width="290" fixed="right">
               <template #default="{ row }">
                 <el-button v-if="canManage" link type="primary" @click="openEdit(row)">编辑</el-button>
+                <el-button v-if="canManage" link type="warning" @click="openPoints(row)">积分</el-button>
                 <el-button v-if="canManage" link type="warning" @click="openResetPassword(row)">重置密码</el-button>
                 <el-button
                   v-if="canManage"
@@ -311,6 +324,24 @@
         <el-button type="primary" :loading="pwdSaving" @click="handleResetPassword">确认重置</el-button>
       </template>
     </el-dialog>
+    <!-- 修改积分 -->
+    <el-dialog v-model="pointsVisible" title="修改积分" width="420px">
+      <el-form ref="pointsFormRef" :model="pointsForm" :rules="pointsRules" label-width="88px">
+        <el-form-item label="用户">
+          <span class="mono">{{ pointsForm.username }}</span>
+        </el-form-item>
+        <el-form-item label="当前积分">
+          <el-tag effect="plain" type="warning">{{ pointsForm.current }}</el-tag>
+        </el-form-item>
+        <el-form-item label="新积分" prop="points">
+          <el-input-number v-model="pointsForm.points" :min="0" :max="1000000" :step="10" step-strictly style="width: 180px" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="pointsVisible = false">取消</el-button>
+        <el-button type="primary" :loading="pointsSaving" @click="handleUpdatePoints">确认修改</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -476,6 +507,41 @@ async function handleResetPassword() {
   }
 }
 
+/* ---------------- 修改积分 ---------------- */
+
+const pointsVisible = ref(false)
+const pointsSaving = ref(false)
+const pointsFormRef = ref()
+const pointsForm = reactive({ id: null, username: '', current: 0, points: 10 })
+const pointsRules = {
+  points: [{ required: true, message: '请输入新积分', trigger: 'blur' }],
+}
+
+function openPoints(row) {
+  pointsForm.id = row.id
+  pointsForm.username = row.username
+  pointsForm.current = row.points ?? 10
+  pointsForm.points = row.points ?? 10
+  pointsVisible.value = true
+  pointsFormRef.value?.clearValidate()
+}
+
+async function handleUpdatePoints() {
+  const valid = await pointsFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+  pointsSaving.value = true
+  try {
+    await userApi.updatePoints(pointsForm.id, pointsForm.points)
+    ElMessage.success(`「${pointsForm.username}」积分已更新为 ${pointsForm.points}`)
+    pointsVisible.value = false
+    load()
+  } catch (err) {
+    ElMessage.error(err.message || '积分更新失败')
+  } finally {
+    pointsSaving.value = false
+  }
+}
+
 /* ---------------- 删除 ---------------- */
 
 async function handleRemove(row) {
@@ -609,6 +675,20 @@ function statusTagType(code) {
 }
 .self-tag {
   margin-left: 6px;
+}
+.user-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.user-cell-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.user-cell-name {
+  font-size: 12px;
+  color: #909399;
 }
 .tab-badge {
   margin-left: 6px;

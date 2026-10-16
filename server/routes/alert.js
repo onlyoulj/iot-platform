@@ -3,6 +3,7 @@ import db from '../db/init.js';
 import { authenticate, requirePermission } from '../services/auth.js';
 import { evaluateRule } from '../services/alert-engine.js';
 import { testChannel, CHANNEL_TYPES } from '../services/alert-notify.js';
+import { isDeviceAdmin, accessibleDeviceIds } from '../services/device-ownership.js';
 
 const router = Router();
 
@@ -10,11 +11,24 @@ router.use(authenticate);
 const canView = requirePermission('alert:view');
 const canHandle = requirePermission('alert:handle');
 
-// 列表
+/**
+ * 归属过滤 SQL 片段（alerts 无 owner 字段，经 device_name 关联 devices）：
+ * 非管理员只看自己归属设备的告警；管理员看全部。
+ */
+function alertOwnerWhere(user, params) {
+  if (isDeviceAdmin(user)) return '';
+  const ids = accessibleDeviceIds(user);
+  if (!ids.length) return ' AND 1=0';
+  params.push(...ids);
+  return ` AND device_name IN (SELECT device_name FROM devices WHERE id IN (${ids.map(() => '?').join(',')}))`;
+}
+
+// 列表（非管理员仅返回自己归属设备的告警）
 router.get('/', canView, (req, res) => {
   const { search, level, status, startDate, endDate, page = 1, pageSize = 20 } = req.query;
   let where = 'WHERE 1=1';
   const params = [];
+  where += alertOwnerWhere(req.user, params);
 
   if (search) {
     where += ' AND (content LIKE ? OR device_name LIKE ?)';
@@ -35,40 +49,50 @@ router.get('/', canView, (req, res) => {
   res.json({ code: 0, data: { list: rows, total, page: parseInt(page), pageSize: parseInt(pageSize) } });
 });
 
-// 统计
+// 统计（按归属口径）
 router.get('/stats', canView, (req, res) => {
-  const total = db.prepare('SELECT COUNT(*) as c FROM alerts').get().c;
-  const unhandled = db.prepare("SELECT COUNT(*) as c FROM alerts WHERE status='unhandled'").get().c;
-  const critical = db.prepare("SELECT COUNT(*) as c FROM alerts WHERE level='critical'").get().c;
-  const handled = db.prepare("SELECT COUNT(*) as c FROM alerts WHERE status='handled'").get().c;
+  const params = [];
+  const cond = `WHERE 1=1${alertOwnerWhere(req.user, params)}`;
+  const total = db.prepare(`SELECT COUNT(*) as c FROM alerts ${cond}`).get(...params).c;
+  const unhandled = db.prepare(`SELECT COUNT(*) as c FROM alerts ${cond} AND status='unhandled'`).get(...params).c;
+  const critical = db.prepare(`SELECT COUNT(*) as c FROM alerts ${cond} AND level='critical'`).get(...params).c;
+  const handled = db.prepare(`SELECT COUNT(*) as c FROM alerts ${cond} AND status='handled'`).get(...params).c;
   res.json({ code: 0, data: { total, unhandled, critical, handled } });
 });
 
-// 处理告警
+// 处理告警（非管理员只能处理自己归属设备的告警）
 router.post('/:id/handle', canHandle, (req, res) => {
-  const { action, remark } = req.body;
-  const alert = db.prepare('SELECT * FROM alerts WHERE id = ?').get(req.params.id);
+  const params = [];
+  const cond = `WHERE id = ?${alertOwnerWhere(req.user, params)}`;
+  const alert = db.prepare(`SELECT * FROM alerts ${cond}`).get(req.params.id, ...params);
   if (!alert) return res.json({ code: 404, message: '告警不存在' });
 
   db.prepare("UPDATE alerts SET status = 'handled', handler = '管理员', read = 1 WHERE id = ?").run(req.params.id);
   res.json({ code: 0, message: '处理成功' });
 });
 
-// 全部已读
+// 全部已读（仅影响自己归属设备的告警）
 router.post('/read-all', canHandle, (req, res) => {
-  db.prepare('UPDATE alerts SET read = 1').run();
+  const params = [];
+  const cond = `WHERE 1=1${alertOwnerWhere(req.user, params)}`;
+  db.prepare(`UPDATE alerts SET read = 1 ${cond}`).run(...params);
   res.json({ code: 0, message: '全部已读' });
 });
 
-// 清空
+// 清空（仅清空自己归属设备的告警）
 router.delete('/clear', canHandle, (req, res) => {
-  db.prepare('DELETE FROM alerts').run();
+  const params = [];
+  const cond = `WHERE 1=1${alertOwnerWhere(req.user, params)}`;
+  db.prepare(`DELETE FROM alerts ${cond}`).run(...params);
   res.json({ code: 0, message: '已清空' });
 });
 
-// 删除单条
+// 删除单条（非管理员只能删除自己归属设备的告警）
 router.delete('/:id', canHandle, (req, res) => {
-  db.prepare('DELETE FROM alerts WHERE id = ?').run(req.params.id);
+  const params = [];
+  const cond = `WHERE id = ?${alertOwnerWhere(req.user, params)}`;
+  const info = db.prepare(`DELETE FROM alerts ${cond}`).run(req.params.id, ...params);
+  if (!info.changes) return res.json({ code: 404, message: '告警不存在' });
   res.json({ code: 0, message: '删除成功' });
 });
 

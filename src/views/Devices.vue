@@ -124,6 +124,12 @@
         <el-table-column prop="group_name" label="分组" width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ row.group_name || '未分组' }}</template>
         </el-table-column>
+        <el-table-column v-if="isDeviceAdmin" label="归属" width="120" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-tag v-if="row.owner_id" size="small" effect="plain">{{ ownerName(row.owner_id) }}</el-tag>
+            <el-tag v-else size="small" type="info" effect="plain">公共设备</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="firmware_version" label="当前固件" width="120">
           <template #default="{ row }">
             <el-tag type="info" size="small" effect="plain">
@@ -241,6 +247,13 @@
             placeholder="不选则归入未分组"
             style="width: 100%"
           />
+        </el-form-item>
+        <el-form-item v-if="isDeviceAdmin && dialogMode === 'add'" label="归属用户">
+          <el-select v-model="form.owner_id" clearable placeholder="默认归属自己" style="width: 100%">
+            <el-option label="平台公共设备（管理员可见）" :value="0" />
+            <el-option v-for="u in userOptions" :key="u.id" :label="`${u.username}${u.nickname ? ' / ' + u.nickname : ''}`" :value="u.id" />
+          </el-select>
+          <div class="form-tip">普通用户只能看到归属给自己的设备；公共设备仅管理员可见</div>
         </el-form-item>
         <el-form-item label="位置">
           <el-input v-model="form.location" placeholder="如 上海·浦东" />
@@ -723,14 +736,14 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage } from '@/utils/element'
 import StatCards from '@/components/StatCards.vue'
 import VChart from '@/plugins/echarts'
-import { deviceApi, deviceGroupApi, subscribeApi, shadowApi, productApi, timelineApi } from '@/utils/api'
+import { deviceApi, deviceGroupApi, subscribeApi, shadowApi, productApi, timelineApi, userApi } from '@/utils/api'
 import { confirm } from '@/utils/dialog'
 import { copyText } from '@/utils/clipboard'
 import { usePagination } from '@/composables/usePagination'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { DEVICE_STATUS, DEVICE_STATUS_OPTIONS, dictValue } from '@/constants'
 import { formatDateTime, orDash, formatNumber } from '@/utils/format'
-import { hasPermission } from '@/utils/auth'
+import { hasPermission, currentUser } from '@/utils/auth'
 
 /* ------------------------- 设备信息展示辅助 ------------------------- */
 
@@ -797,6 +810,26 @@ const groupTreeRef = ref(null)
 const groupTree = ref([])
 /** 分组管理/移动需要 device:edit 权限 */
 const canEdit = computed(() => hasPermission('device:edit'))
+// 归属管理：具备 user:manage 的是管理员，可见/可指定全部设备归属
+const isDeviceAdmin = computed(() => hasPermission('user:manage'))
+
+/* ------------------------- 归属用户选项（管理员指定设备归属） ------------------------- */
+const userOptions = ref([])
+const userLoaded = ref(false)
+async function loadUserOptions() {
+  if (userLoaded.value) return
+  userLoaded.value = true
+  try {
+    const { list } = await userApi.list({ page: 1, pageSize: 100 })
+    userOptions.value = list || []
+  } catch {
+    userOptions.value = []
+  }
+}
+function ownerName(ownerId) {
+  const u = userOptions.value.find((x) => x.id === ownerId)
+  return u ? u.nickname || u.username : `用户#${ownerId}`
+}
 /** 侧栏树数据：虚拟根「全部设备」+「未分组」+ 后端分组树 */
 const groupTreeData = computed(() => [
   { key: 'all', id: null, label: '全部设备' },
@@ -1543,6 +1576,7 @@ const defaultForm = () => ({
   firmware_version: '',
   location: '',
   group_id: null,
+  owner_id: undefined,
 })
 const form = ref(defaultForm())
 const rules = {
@@ -1555,6 +1589,7 @@ function openAddDialog() {
   dialogMode.value = 'add'
   editingId.value = null
   form.value = defaultForm()
+  if (isDeviceAdmin.value) loadUserOptions()
   showDialog.value = true
 }
 
@@ -1592,8 +1627,12 @@ async function handleSubmit() {
       })
       ElMessage.success('修改成功')
     } else {
-      // 新增
-      await deviceApi.create({ ...form.value, product_id: product?.id })
+      // 新增：管理员可将设备归属给指定用户（0 = 平台公共设备 → owner_id=null）
+      const { owner_id, ...payload } = form.value
+      if (isDeviceAdmin.value && owner_id !== undefined) {
+        payload.owner_id = owner_id === 0 ? null : owner_id
+      }
+      await deviceApi.create({ ...payload, product_id: product?.id })
       ElMessage.success('添加成功')
       page.value = 1
     }

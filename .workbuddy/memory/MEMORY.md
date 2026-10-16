@@ -96,3 +96,6 @@
 - ⚠️ **版本铁律**：@dcloudio/* 全家桶精确锁 `3.0.0-alpha-4000120240201002` + vue/@vue/* `3.3.11` + vite `4.2.1` + pinia `2.0.36`，全部不带 ^。必须与本机 HBuilderX（D:\HBuilderX）自带编译器 uniapp-cli-vite 版本对齐——HBX 老编译器（2024-02，4.01）不重定向 `vue`→`@dcloudio/uni-h5-vue` 分叉包，项目装新版 @dcloudio 会报 `isInSSRComponentSetup/normalizeCssVarValue is not exported`。升级 HBX 后同步升项目依赖（以 HBX plugins/uniapp-cli-vite/node_modules 版本为准）。
 - ⚠️ vite.config 必须 `import * as uniModule` 显式取 `.default` 调用（CJS 互操作缺陷：默认导入拿到 module.exports 对象，vite 静默吞掉所有 uni 插件，症状=.vue 报 "Install @vitejs/plugin-vue"）。项目根必须有 index.html。
 - tabBar 图标零依赖生成：mobile/scripts/gen-icons.mjs（手写 PNG zlib+CRC）。UI 截图验证复用 cdp-shot.mjs（420x900 视口）；uni-input 内真实 input 填值、uni-button 点击。详见 memory/2026-10-16.md。
+- 设备详情页：5 页签（远程控制/设备影子/指标趋势/设备属性/生命周期）+ 顶部概要卡 + 12 行基本信息 + 下拉刷新；指标趋势纯 CSS 双图（电量绝对比例、信号相对缩放，≤24 柱）+ Redis/SQLite 数据源标注；生命周期 timeline 彩色圆点。切页签懒加载。
+- 移动端交互（第三轮）：① 图表柱子点击显示气泡数值；② 概览统计卡+快捷入口图标可点跳转；③ 设备列表显示分组+分组筛选下拉（group_id 子树筛选）；④ 详情页固件栏可点跳转固件管理页（按 product_name 筛选）；⑤ 新增固件管理页 firmware.vue。
+- 移动端管理功能（第四轮）：① 设备增删改（FAB+底部表单弹层，编辑/删除操作按钮）；② 固件上传/发布/废弃/删除（uni.uploadFile 走 H5 ObjectURL）；③ OTA 全新页面（列表+创建任务弹层+暂停/恢复/推送/取消操作+任务详情含设备级 Job 明细）。详见 memory/2026-10-16.md。

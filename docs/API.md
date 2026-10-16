@@ -36,6 +36,8 @@
 
 **鉴权**：整组要求登录 + `dashboard:view` 权限。
 
+**归属口径**：管理员（具备 `user:manage` 权限）看全平台数据；普通用户的设备数、在线趋势、产品分布与告警列表仅覆盖**自己归属**的设备（普通用户趋势无历史快照，按其实时设备数平滑估算）。
+
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/stats` | 概览统计 |
@@ -80,6 +82,8 @@
 
 **鉴权**：整组要求登录；读接口要求 `device:view`，新增/修改要求 `device:edit`，删除要求 `device:delete`。
 
+**设备归属**：每台设备有 `owner_id`（归属用户 ID，`null` 表示平台公共设备）。管理员可见/可管理全部设备；普通用户只能看到并操作自己归属的设备，越权访问他人设备统一返回 `404 设备不存在`（不暴露设备存在性）。普通用户新建设备时自动归属自己。
+
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/` | 列表（筛选 + 分页），需 `device:view` |
@@ -119,6 +123,7 @@
 | `location` | string | 部署位置 |
 | `group_id` | number | 所属分组 ID，未分组为 `null` |
 | `group_name` | string | 所属分组名称（列表 / 详情 / 修改返回时附带） |
+| `owner_id` | number | 归属用户 ID，`null` 表示平台公共设备（仅管理员可见） |
 | `last_online` | datetime | 最后上线时间，可能为 `null` |
 | `created_at` | datetime | 创建时间 |
 | `props` | array | 实时属性 `[{ name, value, updated }]` |
@@ -144,13 +149,17 @@
 
 `name` / `device_name` / `product_name` 必填；`device_name` 重复返回 `400`。新建设备初始状态为 `inactive`。可选 `group_id` 直接归组。
 
+归属规则：普通用户创建的设备强制 `owner_id = 自己`；管理员可传 `owner_id` 指定归属用户（`null` 表示公共设备），不传默认归属自己。
+
 **POST `/batch-group` 请求体**（批量移动分组）
 
 ```json
 { "ids": [1, 2, 3], "group_id": 5 }
 ```
 
-`group_id` 传 `null` 表示移出分组（置为未分组）。
+`group_id` 传 `null` 表示移出分组（置为未分组）。普通用户只能移动自己归属的设备，所选设备全部越权时返回 `403`。
+
+**批量删除 `DELETE /:id`**：`id` 支持逗号分隔；普通用户仅能删除自己归属的设备，所选设备全部越权时返回 `403 无权删除所选设备`。
 
 ---
 
@@ -857,7 +866,7 @@ if (resp.update_available) {
 | `password` | 否 | 6-32 位，至少含字母/数字/符号中的两种 |
 | `nickname` `email` `phone` | 否 | 邮箱/手机号格式校验 |
 
-新用户默认归入 `AUTH_DEFAULT_GROUP`（默认 `viewer`）。注册成功直接返回 token，前端可跳过登录页。
+新用户默认归入 `AUTH_DEFAULT_GROUP`（默认 `viewer`），初始积分 `10`，无头像（`avatar_url` 为空串，前端渲染默认头像）。注册成功直接返回 token，前端可跳过登录页。
 
 **GET `/me`**
 
@@ -898,11 +907,13 @@ if (resp.update_available) {
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/` | 列表（分页 + 用户名/用户组/状态筛选） |
-| POST | `/` | 新增用户 |
+| POST | `/` | 新增用户（初始积分 10） |
 | GET | `/meta/groups` | 用户组下拉选项 |
 | GET | `/:id` | 详情 |
 | PUT | `/:id` | 编辑（昵称/邮箱/手机/用户组/状态） |
 | PUT | `/:id/password` | 管理员重置密码 |
+| PUT | `/:id/points` | 管理员修改积分，需 `user:manage` |
+| POST | `/avatar` | 上传自己的头像（multipart/form-data，字段 `file`） |
 | DELETE | `/:id` | 删除（不能删自己、不能删最后一个可用超管） |
 
 **GET `/` 查询参数**
@@ -928,6 +939,9 @@ if (resp.update_available) {
 | `group_id` | number | 所属用户组 ID |
 | `group_name` | string | 用户组名称 |
 | `group_code` | string | 用户组 code |
+| `points` | number | 积分，新用户默认 `10`，仅管理员可改 |
+| `avatar` | string | 头像文件名，空表示未上传 |
+| `avatar_url` | string | 头像访问地址，未上传为 `''`（前端渲染默认头像） |
 | `last_login` | datetime | 最近登录 |
 | `created_at` | datetime | 创建时间 |
 
@@ -948,6 +962,24 @@ if (resp.update_available) {
 `group_id` 必填。分配 `super_admin` 组时，仅超管可操作。
 
 **PUT `/:id`**：可部分更新；修改 `group_id` 时不能修改自己的用户组。
+
+**PUT `/:id/points` 请求体**
+
+```json
+{ "points": 88 }
+```
+
+积分必须为 `0-1000000` 的整数（直接设值，非增减）。普通管理员不能修改超管积分。修改后 `/api/auth/me` 与下次登录的资料中 `points` 即为最新值。
+
+**POST `/avatar`**
+
+`multipart/form-data`，字段名 `file`，仅接受 `jpg/png/gif/webp`，最大 5MB。上传成功后旧头像文件被删除，返回：
+
+```json
+{ "code": 0, "message": "头像已更新", "data": { "avatar": "u5-1792105040803.png", "avatar_url": "/uploads/avatars/u5-1792105040803.png" } }
+```
+
+头像通过静态目录 `/uploads/avatars/` 直接访问；`avatar_url` 为空串时前端应渲染默认头像。
 
 **提权防护**：
 - 普通管理员不能把用户分配到 `super_admin` 组

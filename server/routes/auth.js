@@ -124,10 +124,11 @@ router.post('/register', (req, res) => {
 
   const group = findGroupByCode(DEFAULT_GROUP_CODE);
   const { hash, salt } = hashPassword(password);
+  // 新用户初始积分 10，头像为空（前端渲染默认头像）
   const info = db
     .prepare(
-      `INSERT INTO users (username, password_hash, salt, nickname, email, phone, group_id, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`
+      `INSERT INTO users (username, password_hash, salt, nickname, email, phone, group_id, status, points)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 10)`
     )
     .run(username, hash, salt, nickname || username, email, phone, group?.id ?? null);
 
@@ -145,6 +146,10 @@ router.post('/register', (req, res) => {
 
 /* ============================ 当前用户 ============================ */
 
+/**
+ * 修改自己的资料（当前支持上传/清除头像之外的昵称等由 /api/users/:id 管理）；
+ * 这里提供头像访问地址说明：默认头像由前端渲染，avatar_url 为空表示未上传。
+ */
 router.get('/me', authenticate, (req, res) => {
   res.json({ code: 0, message: 'ok', data: req.user });
 });

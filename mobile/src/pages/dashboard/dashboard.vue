@@ -3,22 +3,27 @@
     <scroll-view scroll-y class="scroll" refresher-enabled :refresher-triggered="refreshing" @refresherrefresh="onRefresh">
       <!-- 用户问候 -->
       <view class="hello card">
-        <view>
-          <text class="hello-name">{{ user?.nickname || user?.username || '用户' }}</text>
-          <text class="hello-sub">欢迎回来</text>
+        <view class="hello-left">
+          <image v-if="avatarSrc" class="hello-avatar" :src="avatarSrc" mode="aspectFill" />
+          <view v-else class="hello-avatar hello-avatar--txt">{{ avatarChar }}</view>
+          <view>
+            <text class="hello-name">{{ user?.nickname || user?.username || '用户' }}</text>
+            <text class="hello-sub">积分 {{ user?.points ?? 10 }}</text>
+          </view>
         </view>
         <text class="hello-badge" :class="{ ok: serverOk }">{{ serverOk ? '在线' : '检查中' }}</text>
       </view>
 
-      <!-- 统计卡 -->
+      <!-- 统计卡（可点击跳转） -->
       <view class="stat-grid">
-        <view class="stat" v-for="s in statCards" :key="s.key">
+        <view class="stat" v-for="s in statCards" :key="s.key" @click="go(s.path)">
           <text class="stat-num" :style="{ color: s.color }">{{ s.value }}</text>
           <text class="stat-label">{{ s.label }}</text>
+          <text class="stat-go">›</text>
         </view>
       </view>
 
-      <!-- 在线趋势（纯 CSS 柱状） -->
+      <!-- 在线趋势（纯 CSS 柱状，点击显值） -->
       <view class="card">
         <view class="card-title">
           <text>设备在线趋势</text>
@@ -27,23 +32,29 @@
           </view>
         </view>
         <view class="chart">
-          <view class="bar-wrap" v-for="item in trend" :key="item.date">
+          <view
+            class="bar-wrap"
+            v-for="(item, i) in trend"
+            :key="item.date"
+            @click="onBarTap(item, i)"
+          >
             <view class="bar-col">
               <view class="bar" :style="{ height: barHeight(item.online) }" />
             </view>
             <text class="bar-label">{{ item.date }}</text>
           </view>
         </view>
+        <text v-if="bubble" class="bubble">{{ bubble }}</text>
       </view>
 
-      <!-- 快捷入口 -->
+      <!-- 快捷入口（图标跳转） -->
       <view class="card quick">
         <text class="card-title">快捷操作</text>
         <view class="quick-grid">
-          <view class="quick-item" @click="go('/pages/devices/devices')"><text class="q-emoji">📱</text><text>设备</text></view>
-          <view class="quick-item" @click="go('/pages/alerts/alerts')"><text class="q-emoji">🔔</text><text>告警</text></view>
-          <view class="quick-item" @click="go('/pages/profile/server')"><text class="q-emoji">🖥️</text><text>服务器</text></view>
-          <view class="quick-item" @click="go('/pages/profile/password')"><text class="q-emoji">🔑</text><text>改密码</text></view>
+          <view class="quick-item" v-for="q in quickList" :key="q.path" @click="go(q.path)">
+            <text class="q-emoji">{{ q.icon }}</text>
+            <text>{{ q.label }}</text>
+          </view>
         </view>
       </view>
     </scroll-view>
@@ -53,21 +64,35 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { dashboardApi } from '../../utils/api'
+import { dashboardApi, staticUrl } from '../../utils/api'
 
 const user = ref(uni.getStorageSync('user'))
+const avatarChar = computed(() => String(user.value?.nickname || user.value?.username || '用').slice(0, 1).toUpperCase())
+const avatarSrc = computed(() => staticUrl(user.value?.avatar_url || ''))
 const stats = ref({})
 const trend = ref([])
 const days = ref(7)
 const refreshing = ref(false)
 const serverOk = ref(false)
+const bubble = ref('')
+let bubbleTimer = null
 
 const statCards = computed(() => [
-  { key: 'device', label: '设备总数', value: stats.value.deviceCount ?? '-', color: '#2b6de8' },
-  { key: 'online', label: '在线设备', value: stats.value.onlineCount ?? '-', color: '#22b07d' },
-  { key: 'firmware', label: '固件数', value: stats.value.firmwareCount ?? '-', color: '#8a63f4' },
-  { key: 'alert', label: '今日告警', value: stats.value.todayAlerts ?? '-', color: '#f0654f' },
+  { key: 'device', label: '设备总数', value: stats.value.deviceCount ?? '-', color: '#2b6de8', path: '/pages/devices/devices' },
+  { key: 'online', label: '在线设备', value: stats.value.onlineCount ?? '-', color: '#22b07d', path: '/pages/devices/devices?status=online' },
+  { key: 'firmware', label: '固件数', value: stats.value.firmwareCount ?? '-', color: '#8a63f4', path: '/pages/firmware/firmware' },
+  { key: 'alert', label: '今日告警', value: stats.value.todayAlerts ?? '-', color: '#f0654f', path: '/pages/alerts/alerts' },
 ])
+
+const quickList = [
+  { icon: '📱', label: '设备', path: '/pages/devices/devices' },
+  { icon: '🔔', label: '告警', path: '/pages/alerts/alerts' },
+  { icon: '📦', label: '固件', path: '/pages/firmware/firmware' },
+  { icon: '🚀', label: 'OTA', path: '/pages/ota/ota' },
+  { icon: '🖥️', label: '服务器', path: '/pages/profile/server' },
+  { icon: '🔑', label: '改密码', path: '/pages/profile/password' },
+  { icon: '👤', label: '我的', path: '/pages/profile/profile' },
+]
 
 const maxOnline = computed(() => Math.max(1, ...trend.value.map((t) => t.online)))
 function barHeight(v) {
@@ -91,12 +116,34 @@ async function onRefresh() {
   refreshing.value = false
 }
 
+function onBarTap(item, i) {
+  const date = item.date || ''
+  bubble.value = `${date}  在线 ${item.online}`
+  if (bubbleTimer) clearTimeout(bubbleTimer)
+  bubbleTimer = setTimeout(() => (bubble.value = ''), 2200)
+}
+
 watch(days, load)
 onMounted(load)
 onShow(load)
 
 function go(url) {
-  uni.navigateTo({ url })
+  // tabBar 页用 switchTab，非 tabBar 用 navigateTo
+  const tabBarPaths = ['/pages/dashboard/dashboard', '/pages/devices/devices', '/pages/alerts/alerts', '/pages/profile/profile']
+  const base = url.split('?')[0]
+  if (tabBarPaths.includes(base)) {
+    if (base !== '/pages/dashboard/dashboard') {
+      uni.switchTab({ url: base })
+      // 带参数的跳转：先切 tab，下一帧通过 eventChannel 或全局变量传递
+      if (url.includes('?')) {
+        // switchTab 不带参数，用全局临时变量
+        uni.$once('tabReady', () => {})
+        globalThis.__pendingFilter = url.split('?')[1]
+      }
+    }
+  } else {
+    uni.navigateTo({ url })
+  }
 }
 </script>
 
@@ -111,6 +158,23 @@ function go(url) {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.hello-left {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+.hello-avatar {
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: 50%;
+  background: #eef3fd;
+  color: #2b6de8;
+  font-size: 36rpx;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .hello-name {
   font-size: 34rpx;
@@ -136,14 +200,20 @@ function go(url) {
 .stat-grid {
   display: flex;
   flex-wrap: wrap;
-  padding: 0 12rpx;
+  padding: 0 24rpx;
 }
 .stat {
-  width: 50%;
+  width: calc(50% - 8rpx);
+  margin: 0 8rpx 8rpx 0;
+  background: #ffffff;
+  border-radius: 20rpx;
+  padding: 28rpx;
+  position: relative;
   box-sizing: border-box;
-  padding: 12rpx;
 }
-.stat > view { display: flex; }
+.stat:nth-child(2n) {
+  margin-right: 0;
+}
 .stat-num {
   font-size: 44rpx;
   font-weight: 700;
@@ -155,10 +225,12 @@ function go(url) {
   margin-top: 4rpx;
   display: block;
 }
-.stat {
-  background: #ffffff;
-  border-radius: 20rpx;
-  padding: 28rpx;
+.stat-go {
+  position: absolute;
+  right: 24rpx;
+  top: 28rpx;
+  font-size: 36rpx;
+  color: #d6dce5;
 }
 .card-title {
   font-size: 30rpx;
@@ -189,6 +261,7 @@ function go(url) {
   align-items: flex-end;
   height: 220rpx;
   gap: 6rpx;
+  position: relative;
 }
 .bar-wrap {
   flex: 1;
@@ -209,6 +282,10 @@ function go(url) {
   max-width: 36rpx;
   background: linear-gradient(180deg, #5a9cf8, #2b6de8);
   border-radius: 8rpx 8rpx 0 0;
+  transition: opacity 0.15s;
+}
+.bar-wrap:active .bar {
+  opacity: 0.6;
 }
 .bar-label {
   font-size: 18rpx;
@@ -216,18 +293,33 @@ function go(url) {
   margin-top: 8rpx;
   transform: scale(0.9);
 }
+.bubble {
+  display: block;
+  text-align: center;
+  font-size: 24rpx;
+  color: #2b6de8;
+  background: #e8f0fe;
+  border-radius: 12rpx;
+  padding: 12rpx 0;
+  margin-top: 20rpx;
+}
 .quick-grid {
   display: flex;
+  flex-wrap: wrap;
   margin-top: 8rpx;
 }
 .quick-item {
-  flex: 1;
+  width: 25%;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12rpx;
   font-size: 24rpx;
   color: #5a6070;
+  padding: 20rpx 0;
+}
+.quick-item:active {
+  opacity: 0.6;
 }
 .q-emoji {
   font-size: 44rpx;

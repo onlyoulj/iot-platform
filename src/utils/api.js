@@ -158,6 +158,10 @@ export const userApi = {
   update: (id, data) => request.put(`/users/${id}`, data),
   /** 管理员重置指定用户密码 */
   resetPassword: (id, password) => request.put(`/users/${id}/password`, { password }),
+  /** 管理员修改指定用户积分：{ points }（0-1000000 整数直接设值） */
+  updatePoints: (id, points) => request.put(`/users/${id}/points`, { points }),
+  /** 上传自己的头像（multipart，字段 file）→ { avatar, avatar_url } */
+  uploadAvatar: (formData) => request.upload('/users/avatar', formData),
   remove: (id) => request.del(`/users/${id}`),
   /** 用户组下拉选项 */
   getGroups: () => request.get('/users/meta/groups'),

@@ -1,11 +1,17 @@
 import { Router } from 'express';
 import db from '../db/init.js';
 import { authenticate, requirePermission } from '../services/auth.js';
+import { isDeviceAdmin, ownerWhere } from '../services/device-ownership.js';
 
 const router = Router();
 
 // 管理端接口统一要求登录 + 仪表盘查看权限
 router.use(authenticate, requirePermission('dashboard:view'));
+
+/**
+ * 归属过滤：管理员看全平台数据；普通用户的设备/告警统计仅覆盖自己归属的设备。
+ * online_stats 快照表为全平台口径，仅管理员返回真实快照；普通用户趋势按其设备实时数插值。
+ */
 
 /* ============================ 在线统计快照表 ============================ */
 /**
@@ -52,19 +58,50 @@ function recordOnlineSnapshot() {
 
 /* ============================ 仪表盘统计 ============================ */
 
-// 统计概览
+// 统计概览（按归属口径）
 router.get('/stats', (req, res) => {
-  const deviceCount = db.prepare('SELECT COUNT(*) as c FROM devices').get().c;
-  const onlineCount = db.prepare("SELECT COUNT(*) as c FROM devices WHERE status='online'").get().c;
+  const own = ownerWhere(req.user, 'd');
+  const cond = `WHERE 1=1${own.sql}`;
+  const deviceCount = db.prepare(`SELECT COUNT(*) as c FROM devices d ${cond}`).get(...own.params).c;
+  const onlineCount = db
+    .prepare(`SELECT COUNT(*) as c FROM devices d ${cond} AND d.status='online'`)
+    .get(...own.params).c;
   const firmwareCount = db.prepare('SELECT COUNT(*) as c FROM firmwares').get().c;
-  const todayAlerts = db.prepare("SELECT COUNT(*) as c FROM alerts WHERE date(created_at)=date('now','localtime')").get().c;
+  const alertParams = [];
+  const alertCond = isDeviceAdmin(req.user)
+    ? ''
+    : ` AND device_name IN (SELECT device_name FROM devices WHERE owner_id = ?)`;
+  if (!isDeviceAdmin(req.user)) alertParams.push(req.user.id);
+  const todayAlerts = db
+    .prepare(`SELECT COUNT(*) as c FROM alerts WHERE date(created_at)=date('now','localtime')${alertCond}`)
+    .get(...alertParams).c;
   res.json({ code: 0, data: { deviceCount, onlineCount, firmwareCount, todayAlerts } });
 });
 
-// 设备在线趋势（近7天/30天）
+// 设备在线趋势（近7天/30天）；管理员基于全平台快照，普通用户基于自己归属设备实时数插值
 router.get('/trend', (req, res) => {
   // 限制 1-90 天，防止恶意大范围查询
   const days = Math.min(Math.max(parseInt(req.query.days) || 7, 1), 90);
+  const own = ownerWhere(req.user, 'd');
+
+  // 普通用户：无归属快照数据，以自己设备的实时在线数做平滑估算（60%→100%）
+  if (own.sql) {
+    const online = db
+      .prepare(`SELECT COUNT(*) as c FROM devices d WHERE d.status='online'${own.sql}`)
+      .get(...own.params).c;
+    const total = db
+      .prepare(`SELECT COUNT(*) as c FROM devices d WHERE 1=1${own.sql}`)
+      .get(...own.params).c;
+    const data = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const label = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+      const ratio = (days - i) / days;
+      data.push({ date: label, online: Math.max(0, Math.round(online * (0.6 + 0.4 * ratio))), total });
+    }
+    return res.json({ code: 0, data });
+  }
 
   // 先记录当日快照，保证「今天」的数据是真实的
   const current = recordOnlineSnapshot();
@@ -101,27 +138,34 @@ router.get('/trend', (req, res) => {
   res.json({ code: 0, data });
 });
 
-// 产品设备分布（实时统计，与 devices 表联动）
+// 产品设备分布（实时统计，与 devices 表联动；按归属口径）
 router.get('/product-distribution', (req, res) => {
+  const own = ownerWhere(req.user, 'd');
   // 不再取 products.device_count 种子字段，改为 LEFT JOIN devices 实时 COUNT
   const rows = db
     .prepare(`
       SELECT p.name, COUNT(d.id) AS value
       FROM products p
-      LEFT JOIN devices d ON d.product_id = p.id
+      LEFT JOIN devices d ON d.product_id = p.id AND 1=1${own.sql}
       GROUP BY p.id, p.name
       ORDER BY value DESC
     `)
-    .all();
+    .all(...own.params);
   res.json({ code: 0, data: rows });
 });
 
-// 最新告警（?limit= 可调数量，供数据大屏滚动列表拉更多；默认 5 上限 50）
+// 最新告警（?limit= 可调数量，供数据大屏滚动列表拉更多；默认 5 上限 50；按归属过滤）
 router.get('/recent-alerts', (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit) || 5, 1), 50);
+  const params = [limit];
+  const own = ownerWhere(req.user, 'd');
+  const cond = isDeviceAdmin(req.user)
+    ? ''
+    : ` WHERE a.device_name IN (SELECT device_name FROM devices d WHERE d.owner_id = ?)`;
+  if (!isDeviceAdmin(req.user)) params.unshift(req.user.id);
   const rows = db
-    .prepare('SELECT content as msg, device_name, product_name, status, created_at as time, level FROM alerts ORDER BY created_at DESC LIMIT ?')
-    .all(limit);
+    .prepare(`SELECT a.content as msg, a.device_name, a.product_name, a.status, a.created_at as time, a.level FROM alerts a${cond} ORDER BY a.created_at DESC LIMIT ?`)
+    .all(...params);
   res.json({ code: 0, data: rows });
 });
 

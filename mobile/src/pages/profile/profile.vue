@@ -2,10 +2,18 @@
   <view class="profile">
     <!-- 用户卡 -->
     <view class="user-card">
-      <view class="avatar">{{ avatarChar }}</view>
+      <view class="avatar-wrap" @click="changeAvatar">
+        <image v-if="avatarSrc" class="avatar-img" :src="avatarSrc" mode="aspectFill" />
+        <view v-else class="avatar">{{ avatarChar }}</view>
+        <view class="avatar-edit">换</view>
+      </view>
       <view class="u-info">
         <text class="u-name">{{ user?.nickname || user?.username || '未登录' }}</text>
         <text class="u-sub">{{ user?.group_name || user?.email || '' }}</text>
+      </view>
+      <view class="points-badge">
+        <text class="points-num">{{ user?.points ?? 10 }}</text>
+        <text class="points-lbl">积分</text>
       </view>
     </view>
 
@@ -36,17 +44,47 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { authApi } from '../../utils/api'
+import { authApi, userApi, staticUrl } from '../../utils/api'
 import { getServerLabel } from '../../config/server'
 
 const user = ref(uni.getStorageSync('user'))
 const serverLabel = ref(getServerLabel())
 const avatarChar = computed(() => String(user.value?.nickname || user.value?.username || '未').slice(0, 1).toUpperCase())
+const avatarSrc = computed(() => staticUrl(user.value?.avatar_url || ''))
 
 onShow(() => {
   user.value = uni.getStorageSync('user')
   serverLabel.value = getServerLabel()
+  // 静默刷新资料：积分/头像可能有变化
+  authApi.me().then((profile) => {
+    user.value = profile
+    uni.setStorageSync('user', profile)
+  }).catch(() => {})
 })
+
+/** 更换头像：选图 → 上传 → 本地资料即时更新 */
+function changeAvatar() {
+  uni.chooseImage({
+    count: 1,
+    sizeType: ['compressed'],
+    success: async (res) => {
+      const filePath = res.tempFilePaths?.[0]
+      if (!filePath) return
+      uni.showLoading({ title: '上传中' })
+      try {
+        await userApi.uploadAvatar(filePath)
+        const profile = await authApi.me()
+        user.value = profile
+        uni.setStorageSync('user', profile)
+        uni.hideLoading()
+        uni.showToast({ title: '头像已更新', icon: 'success' })
+      } catch (e) {
+        uni.hideLoading()
+        uni.showToast({ title: e.message || '上传失败', icon: 'none' })
+      }
+    },
+  })
+}
 
 function go(url) {
   uni.navigateTo({ url })
@@ -90,10 +128,54 @@ function logout() {
   align-items: center;
   justify-content: center;
 }
+.avatar-wrap {
+  position: relative;
+  width: 110rpx;
+  height: 110rpx;
+}
+.avatar-img {
+  width: 110rpx;
+  height: 110rpx;
+  border-radius: 50%;
+}
+.avatar-edit {
+  position: absolute;
+  right: -4rpx;
+  bottom: -4rpx;
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #2b6de8;
+  font-size: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2rpx 6rpx rgba(0, 0, 0, 0.15);
+}
 .u-info {
   margin-left: 28rpx;
   display: flex;
   flex-direction: column;
+  flex: 1;
+}
+.points-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 16rpx;
+  padding: 12rpx 24rpx;
+}
+.points-num {
+  color: #ffffff;
+  font-size: 34rpx;
+  font-weight: 700;
+}
+.points-lbl {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 20rpx;
+  margin-top: 2rpx;
 }
 .u-name {
   color: #ffffff;

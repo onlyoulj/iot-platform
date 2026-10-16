@@ -89,6 +89,7 @@ function extractToken(req) {
 
 const SELECT_USER = `
   SELECT u.id, u.username, u.nickname, u.email, u.phone, u.status,
+         u.points, u.avatar,
          u.group_id, u.last_login, u.created_at,
          g.name AS group_name, g.code AS group_code
   FROM users u LEFT JOIN user_groups g ON g.id = u.group_id
@@ -113,6 +114,11 @@ export function getGroupPermissions(groupId) {
     .map((r) => r.permission);
 }
 
+/** 用户头像访问地址（未上传时为空串，前端渲染默认头像） */
+export function avatarUrl(avatar) {
+  return avatar ? `/uploads/avatars/${avatar}` : '';
+}
+
 /** 用户的角色与权限摘要 */
 export function buildAuthProfile(user) {
   const permissions = getGroupPermissions(user.group_id);
@@ -122,6 +128,9 @@ export function buildAuthProfile(user) {
     nickname: user.nickname,
     email: user.email,
     phone: user.phone,
+    avatar: user.avatar || '',
+    avatar_url: avatarUrl(user.avatar),
+    points: user.points ?? 10,
     status: user.status,
     group_id: user.group_id,
     group_name: user.group_name || '',

@@ -52,7 +52,7 @@
 
             <el-dropdown trigger="click" @command="handleUserCommand">
               <div class="user-entry">
-                <el-avatar :size="32" class="user-avatar">
+                <el-avatar :size="32" :src="avatarUrl || undefined" class="user-avatar">
                   <el-icon><User /></el-icon>
                 </el-avatar>
                 <div class="user-meta">
@@ -99,9 +99,27 @@
 
       <!-- 个人资料 -->
       <el-dialog v-model="profileVisible" title="个人资料" width="420px">
+        <div class="profile-head">
+          <el-avatar :size="64" :src="avatarUrl || undefined">
+            <el-icon :size="28"><User /></el-icon>
+          </el-avatar>
+          <div class="profile-head-meta">
+            <div class="profile-name">{{ displayName() }}</div>
+            <el-tag size="small">{{ currentUser?.group_name || '未分组' }}</el-tag>
+          </div>
+          <el-button size="small" :loading="avatarUploading" @click="avatarInputRef?.click()">更换头像</el-button>
+          <input
+            ref="avatarInputRef"
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            style="display: none"
+            @change="handleAvatarChange"
+          />
+        </div>
         <el-descriptions :column="1" border>
           <el-descriptions-item label="用户名">{{ currentUser?.username }}</el-descriptions-item>
           <el-descriptions-item label="昵称">{{ currentUser?.nickname || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="积分">{{ currentUser?.points ?? 10 }}</el-descriptions-item>
           <el-descriptions-item label="用户组">
             <el-tag size="small">{{ currentUser?.group_name || '未分组' }}</el-tag>
           </el-descriptions-item>
@@ -138,7 +156,8 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
-import { alertApi, authApi } from '@/utils/api'
+import { alertApi, authApi, userApi } from '@/utils/api'
+import request from '@/utils/request'
 import { APP_FOOTER } from '@/config/footer'
 import { ElMessage } from '@/utils/element'
 import { confirm } from '@/utils/dialog'
@@ -202,6 +221,39 @@ function goAlert() {
 
 const profileVisible = ref(false)
 const passwordVisible = ref(false)
+
+/* ---------------- 头像 ---------------- */
+// avatar_url 由后端下发（未上传为空串，el-avatar 回退到默认图标）
+const avatarUrl = computed(() => {
+  const url = currentUser.value?.avatar_url
+  return url ? request.staticUrl(url) : ''
+})
+const avatarUploading = ref(false)
+const avatarInputRef = ref()
+
+async function handleAvatarChange(e) {
+  const file = e.target.files?.[0]
+  e.target.value = ''
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.warning('头像不能超过 5MB')
+    return
+  }
+  avatarUploading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', file)
+    await userApi.uploadAvatar(fd)
+    ElMessage.success('头像已更新')
+    // 立即刷新资料（拿到新的 avatar_url），顶栏与弹窗同步生效
+    setUser(await authApi.me())
+  } catch (err) {
+    ElMessage.error(err.message || '头像上传失败')
+  } finally {
+    avatarUploading.value = false
+  }
+}
+
 const pwdSaving = ref(false)
 const pwdFormRef = ref()
 const pwdForm = reactive({ old_password: '', new_password: '', confirm: '' })
@@ -465,6 +517,25 @@ onBeforeUnmount(() => {
 .caret {
   color: #909399;
   font-size: 12px;
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.profile-head-meta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.profile-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
 }
 
 .content-area {

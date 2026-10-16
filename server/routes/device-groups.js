@@ -2,6 +2,7 @@ import { Router } from 'express';
 import db from '../db/init.js';
 import { authenticate, requirePermission } from '../services/auth.js';
 import { getGroupTree, getDescendantIds, groupExists } from '../services/device-groups.js';
+import { isDeviceAdmin } from '../services/device-ownership.js';
 
 const router = Router();
 
@@ -11,10 +12,11 @@ const canEdit = requirePermission('device:edit');
 
 /**
  * GET /api/device-groups
- * 分组树（含直属设备数），前端侧栏与树选择器共用
+ * 分组树（含直属设备数），前端侧栏与树选择器共用；
+ * 普通用户仅见有自己归属设备的分组分支，且设备数按归属口径统计。
  */
 router.get('/', canView, (req, res) => {
-  res.json({ code: 0, data: getGroupTree() });
+  res.json({ code: 0, data: getGroupTree(isDeviceAdmin(req.user) ? null : req.user.id) });
 });
 
 // 新增分组 body: { name, parent_id, description }

@@ -6,6 +6,7 @@ import { getDeviceMetrics } from '../services/device-metrics.js';
 import { sendCommand, listCommands } from '../services/device-control.js';
 import { getShadow, setDesired, applyReported, getPropHistory } from '../services/thing-model.js';
 import { getDescendantIds, groupExists } from '../services/device-groups.js';
+import { isDeviceAdmin, ownerWhere, accessibleDeviceIds } from '../services/device-ownership.js';
 
 const router = Router();
 
@@ -15,11 +16,31 @@ const canView = requirePermission('device:view');
 const canEdit = requirePermission('device:edit');
 const canDelete = requirePermission('device:delete');
 
-// 列表（支持筛选 + 分页）
+/**
+ * 归属可见性：管理员可见全部设备；普通用户仅可见自己归属的设备。
+ * 不可见时统一按「设备不存在」返回 404，避免暴露设备存在性。
+ */
+function deviceVisible(req, device) {
+  return !!device && (isDeviceAdmin(req.user) || device.owner_id === req.user.id);
+}
+
+/** 取设备行并做归属校验，不可见时向 res 写 404 并返回 null */
+function accessibleDevice(req, res, cols = '*') {
+  const device = db.prepare(`SELECT ${cols} FROM devices WHERE id = ?`).get(req.params.id);
+  if (!deviceVisible(req, device)) {
+    res.json({ code: 404, message: '设备不存在' });
+    return null;
+  }
+  return device;
+}
+
+// 列表（支持筛选 + 分页）；非管理员仅返回自己归属的设备
 router.get('/', canView, (req, res) => {
   const { search, product, status, group_id, page = 1, pageSize = 20 } = req.query;
   let where = 'WHERE 1=1';
-  const params = [];
+  const own = ownerWhere(req.user, 'd');
+  where += own.sql;
+  const params = [...own.params];
 
   if (search) {
     where += ' AND (d.name LIKE ? OR d.device_name LIKE ?)';
@@ -57,23 +78,28 @@ router.get('/', canView, (req, res) => {
   res.json({ code: 0, data: { list: rows, total, page: parseInt(page), pageSize: parseInt(pageSize) } });
 });
 
-// 统计（必须定义在 /:id 之前，否则 stats 会被当成 id）
+// 统计（必须定义在 /:id 之前，否则 stats 会被当成 id）；按归属口径统计
 router.get('/stats', canView, (req, res) => {
-  const total = db.prepare('SELECT COUNT(*) as c FROM devices').get().c;
-  const online = db.prepare("SELECT COUNT(*) as c FROM devices WHERE status='online'").get().c;
-  const offline = db.prepare("SELECT COUNT(*) as c FROM devices WHERE status='offline'").get().c;
-  const inactive = db.prepare("SELECT COUNT(*) as c FROM devices WHERE status='inactive'").get().c;
+  const own = ownerWhere(req.user, 'd');
+  const cond = `WHERE 1=1${own.sql}`;
+  const stat = (s) =>
+    db.prepare(`SELECT COUNT(*) as c FROM devices d ${cond} ${s ? `AND d.status='${s}'` : ''}`).get(...own.params).c;
+  const total = stat();
+  const online = stat('online');
+  const offline = stat('offline');
+  const inactive = stat('inactive');
   res.json({ code: 0, data: { total, online, offline, inactive } });
 });
 
 // 详情
 router.get('/:id', canView, (req, res) => {
+  const device = accessibleDevice(req, res);
+  if (!device) return;
   const row = db
     .prepare(
       'SELECT d.*, g.name as group_name FROM devices d LEFT JOIN device_groups g ON d.group_id = g.id WHERE d.id = ?'
     )
-    .get(req.params.id);
-  if (!row) return res.json({ code: 404, message: '设备不存在' });
+    .get(device.id);
   row.props = db.prepare('SELECT prop_name as name, prop_value as value, updated_at as updated FROM device_props WHERE device_id = ?').all(row.id);
   res.json({ code: 0, data: row });
 });
@@ -83,8 +109,8 @@ router.get('/:id', canView, (req, res) => {
  * 电量/信号历史趋势（Redis 热窗口优先，SQLite 底座兜底，超过 500 点自动分桶降采样）
  */
 router.get('/:id/metrics', canView, async (req, res) => {
-  const device = db.prepare('SELECT id FROM devices WHERE id = ?').get(req.params.id);
-  if (!device) return res.json({ code: 404, message: '设备不存在' });
+  const device = accessibleDevice(req, res, 'id');
+  if (!device) return;
   try {
     const data = await getDeviceMetrics(device.id, String(req.query.range || '24h'));
     res.json({ code: 0, data });
@@ -99,8 +125,8 @@ router.get('/:id/metrics', canView, async (req, res) => {
  * 设备远程控制指令历史
  */
 router.get('/:id/commands', canView, (req, res) => {
-  const device = db.prepare('SELECT id FROM devices WHERE id = ?').get(req.params.id);
-  if (!device) return res.json({ code: 404, message: '设备不存在' });
+  const device = accessibleDevice(req, res, 'id');
+  if (!device) return;
   const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 200);
   res.json({ code: 0, data: listCommands(device.id, limit) });
 });
@@ -111,8 +137,8 @@ router.get('/:id/commands', canView, (req, res) => {
  * body: { command, params }
  */
 router.post('/:id/command', canEdit, async (req, res) => {
-  const device = db.prepare('SELECT id, device_name, status FROM devices WHERE id = ?').get(req.params.id);
-  if (!device) return res.json({ code: 404, message: '设备不存在' });
+  const device = accessibleDevice(req, res, 'id, device_name, status');
+  if (!device) return;
   try {
     const result = await sendCommand(device, {
       command: req.body?.command,
@@ -136,8 +162,8 @@ router.post('/:id/command', canEdit, async (req, res) => {
  * 设备影子（desired 期望态 + reported 上报态 + 版本）
  */
 router.get('/:id/shadow', canView, (req, res) => {
-  const device = db.prepare('SELECT id FROM devices WHERE id = ?').get(req.params.id);
-  if (!device) return res.json({ code: 404, message: '设备不存在' });
+  const device = accessibleDevice(req, res, 'id');
+  if (!device) return;
   res.json({ code: 0, data: getShadow(device.id) });
 });
 
@@ -147,8 +173,8 @@ router.get('/:id/shadow', canView, (req, res) => {
  * body: {desired: {key: value}}
  */
 router.put('/:id/shadow/desired', canEdit, async (req, res) => {
-  const device = db.prepare('SELECT id, device_name, product_id, status FROM devices WHERE id = ?').get(req.params.id);
-  if (!device) return res.json({ code: 404, message: '设备不存在' });
+  const device = accessibleDevice(req, res, 'id, device_name, product_id, status');
+  if (!device) return;
   try {
     const result = await setDesired(device, req.body?.desired || req.body || {});
     res.json({
@@ -169,8 +195,8 @@ router.put('/:id/shadow/desired', canEdit, async (req, res) => {
  * body: {reported: {key: value}}
  */
 router.post('/:id/shadow/reported', canEdit, (req, res) => {
-  const device = db.prepare('SELECT id, product_id FROM devices WHERE id = ?').get(req.params.id);
-  if (!device) return res.json({ code: 404, message: '设备不存在' });
+  const device = accessibleDevice(req, res, 'id, product_id');
+  if (!device) return;
   try {
     const result = applyReported(device.id, device.product_id, req.body?.reported || req.body || {});
     res.json({ code: 0, message: `已更新 ${result.applied} 个属性`, data: { ...result, shadow: getShadow(device.id) } });
@@ -184,8 +210,8 @@ router.post('/:id/shadow/reported', canEdit, (req, res) => {
  * 自定义属性历史趋势（shadow_report/补录时自动采样，60s 去重；数值型超 500 点分桶 AVG）
  */
 router.get('/:id/props-history', canView, (req, res) => {
-  const device = db.prepare('SELECT id, product_id FROM devices WHERE id = ?').get(req.params.id);
-  if (!device) return res.json({ code: 404, message: '设备不存在' });
+  const device = accessibleDevice(req, res, 'id, product_id');
+  if (!device) return;
   const identifier = String(req.query.identifier || '').trim();
   if (!identifier) return res.json({ code: 400, message: '缺少 identifier' });
   const prop = db
@@ -206,8 +232,8 @@ router.get('/:id/props-history', canView, (req, res) => {
  * 设备生命周期时间轴：聚合告警/控制指令/升级任务/MQTT 事件/影子更新/激活等
  */
 router.get('/:id/timeline', canView, (req, res) => {
-  const device = db.prepare('SELECT id, device_name, created_at, active_time FROM devices WHERE id = ?').get(req.params.id);
-  if (!device) return res.json({ code: 404, message: '设备不存在' });
+  const device = accessibleDevice(req, res, 'id, device_name, created_at, active_time');
+  if (!device) return;
   const limit = Math.min(Math.max(parseInt(req.query.limit) || 100, 1), 300);
 
   const rows = db
@@ -260,9 +286,9 @@ router.get('/:id/timeline', canView, (req, res) => {
   res.json({ code: 0, data: rows.slice(0, limit) });
 });
 
-// 新增
+// 新增；普通用户创建的设备自动归属自己，管理员可指定 owner_id（默认归自己）
 router.post('/', canEdit, (req, res) => {
-  const { name, device_name, product_id, product_name, firmware_version, location, group_id } = req.body;
+  const { name, device_name, product_id, product_name, firmware_version, location, group_id, owner_id } = req.body;
   if (!name || !device_name || !product_name) return res.json({ code: 400, message: '缺少必填字段' });
 
   const exists = db.prepare('SELECT id FROM devices WHERE device_name = ?').get(device_name);
@@ -271,10 +297,19 @@ router.post('/', canEdit, (req, res) => {
   const groupId = group_id ? Number(group_id) : null;
   if (groupId != null && !groupExists(groupId)) return res.json({ code: 400, message: '目标分组不存在' });
 
+  // 归属：管理员可指定 owner_id 或置 NULL（公共设备）；普通用户强制归属自己
+  let ownerId = req.user.id;
+  if (isDeviceAdmin(req.user)) {
+    ownerId = owner_id === null ? null : owner_id !== undefined ? Number(owner_id) || null : req.user.id;
+    if (ownerId != null && !db.prepare('SELECT id FROM users WHERE id = ?').get(ownerId)) {
+      return res.json({ code: 400, message: '归属用户不存在' });
+    }
+  }
+
   const result = db.prepare(`
-    INSERT INTO devices (name, device_name, product_id, product_name, firmware_version, location, group_id, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'inactive')
-  `).run(name, device_name, product_id || null, product_name, firmware_version || '', location || '', groupId);
+    INSERT INTO devices (name, device_name, product_id, product_name, firmware_version, location, group_id, owner_id, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'inactive')
+  `).run(name, device_name, product_id || null, product_name, firmware_version || '', location || '', groupId, ownerId);
 
   res.json({ code: 0, data: { id: result.lastInsertRowid }, message: '添加成功' });
 });
@@ -287,19 +322,24 @@ router.post('/batch-group', canEdit, (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : [];
   if (!ids.length) return res.json({ code: 400, message: '未选择任何设备' });
 
+  // 归属约束：普通用户只能移动自己归属的设备
+  const accessible = accessibleDeviceIds(req.user);
+  const allowed = ids.filter((id) => accessible.includes(id));
+  if (!allowed.length) return res.json({ code: 403, message: '无权操作所选设备' });
+
   const groupId = req.body?.group_id ? Number(req.body.group_id) : null;
   if (groupId != null && !groupExists(groupId)) return res.json({ code: 400, message: '目标分组不存在' });
 
-  const placeholders = ids.map(() => '?').join(',');
-  db.prepare(`UPDATE devices SET group_id = ? WHERE id IN (${placeholders})`).run(groupId, ...ids);
-  res.json({ code: 0, message: `已将 ${ids.length} 台设备移入${groupId != null ? '指定分组' : '未分组'}` });
+  const placeholders = allowed.map(() => '?').join(',');
+  db.prepare(`UPDATE devices SET group_id = ? WHERE id IN (${placeholders})`).run(groupId, ...allowed);
+  res.json({ code: 0, message: `已将 ${allowed.length} 台设备移入${groupId != null ? '指定分组' : '未分组'}` });
 });
 
 // 修改
 router.put('/:id', canEdit, (req, res) => {
   const { name, location, firmware_version, product_name, product_id, group_id } = req.body;
-  const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
-  if (!device) return res.json({ code: 404, message: '设备不存在' });
+  const device = accessibleDevice(req, res);
+  if (!device) return;
 
   // 分组变更：group_id 为 null/空 = 移出分组（需显式区分「未传」与「置空」）
   let nextGroupId;
@@ -356,13 +396,17 @@ router.put('/:id', canEdit, (req, res) => {
   res.json({ code: 0, message: '修改成功', data: updated });
 });
 
-// 删除
+// 删除（id 支持逗号分隔批量）；普通用户只能删除自己归属的设备
 router.delete('/:id', canDelete, (req, res) => {
-  const ids = req.params.id.split(',');
-  const placeholders = ids.map(() => '?').join(',');
-  db.prepare(`DELETE FROM device_props WHERE device_id IN (${placeholders})`).run(...ids);
-  db.prepare(`DELETE FROM device_metrics WHERE device_id IN (${placeholders})`).run(...ids);
-  db.prepare(`DELETE FROM devices WHERE id IN (${placeholders})`).run(...ids);
+  const ids = req.params.id.split(',').map(Number).filter(Number.isInteger);
+  const accessible = accessibleDeviceIds(req.user);
+  const allowed = ids.filter((id) => accessible.includes(id));
+  if (!allowed.length) return res.json({ code: 403, message: '无权删除所选设备' });
+
+  const placeholders = allowed.map(() => '?').join(',');
+  db.prepare(`DELETE FROM device_props WHERE device_id IN (${placeholders})`).run(...allowed);
+  db.prepare(`DELETE FROM device_metrics WHERE device_id IN (${placeholders})`).run(...allowed);
+  db.prepare(`DELETE FROM devices WHERE id IN (${placeholders})`).run(...allowed);
   res.json({ code: 0, message: '删除成功' });
 });
 
@@ -378,8 +422,8 @@ router.get('/meta/products', canView, (req, res) => {
  * body: battery / signal / mac / hardware_version / firmware_version / longitude / latitude
  */
 router.post('/:id/info', canEdit, (req, res) => {
-  const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
-  if (!device) return res.json({ code: 404, message: '设备不存在' });
+  const device = accessibleDevice(req, res);
+  if (!device) return;
 
   const result = applyDeviceInfo(device, req.body || {});
   res.json({
