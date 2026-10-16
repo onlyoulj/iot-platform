@@ -1,0 +1,7 @@
+{
+  "name": "mobile-apk-pack",
+  "version": "0.1.0",
+  "description": "使用 HBuilderX CLI 将 mobile（uni-app）移动端项目云打包为 Android APK",
+  "author": { "name": "ninesugar" },
+  "skills": "./skills"
+}

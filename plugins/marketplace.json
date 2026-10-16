@@ -1,0 +1,15 @@
+{
+  "name": "dev-iot-platform-local",
+  "plugins": [
+    {
+      "name": "mobile-apk-pack",
+      "source": "./mobile-apk-pack",
+      "version": "0.1.0",
+      "description": "使用 HBuilderX CLI 将 mobile（uni-app）移动端项目云打包为 Android APK",
+      "displayName": "Mobile APK Pack",
+      "displayName_i18n": { "zh-CN": "移动端 APK 打包" },
+      "description_i18n": { "zh-CN": "使用 HBuilderX CLI 将 mobile（uni-app）移动端项目云打包为 Android APK" },
+      "category": "developer-tools"
+    }
+  ]
+}
