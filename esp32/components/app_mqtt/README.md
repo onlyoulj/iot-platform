@@ -11,7 +11,7 @@
 | MQTT 客户端凭据 | `os` / `os`（**不是** EMQX Dashboard 的 admin 账号） |
 | 下行（订阅） | `device/{id}/downlink`（服务器同时向 `{id}` 与 `{SN}` 两主题发布） |
 | 上行（发布） | `device/{id}/uplink` — `heartbeat` / `upgrade_status` |
-| 信息上报（发布） | `device/{id}/info` — 电量/信号/MAC/版本/经纬度 |
+| 信息上报（发布） | `device/{id}/info` — 电量/信号/SSID/IP/MAC/版本/经纬度 |
 | 消息信封 | `{"type":"upgrade|control|test|...","timestamp":"...","data":{...}}` |
 
 `{id}` 可以是平台数字 ID 或 DeviceName(SN)，二者任选其一（或都配，模块会同时订阅两个下行主题）。
@@ -100,6 +100,8 @@ app_mqtt_config_t cfg = {
 app_mqtt_device_info_t info = {
     .has_battery = true,  .battery = 85,
     .has_signal = true,   .signal = -58,          /* RSSI dBm */
+    .ssid = "Office-5G",                           /* 当前 Wi-Fi */
+    .ip = "192.168.1.101",                         /* 当前 IP */
     .mac = "AA:BB:CC:DD:EE:FF",
     .hardware_version = "HW-1.2.0",
     .has_longitude = true, .longitude = 112.938814,

@@ -1,22 +1,28 @@
 <template>
-  <view class="anns">
+  <view class="anns anim-page">
     <!-- 统计条 -->
-    <view class="stat-bar">
+    <view class="stat-bar anim-drop">
       <view class="s-item"><text class="s-num">{{ total }}</text><text class="s-label">全部</text></view>
       <view class="s-item"><text class="s-num warn">{{ unreadCount }}</text><text class="s-label">未读</text></view>
       <view class="s-item">
-        <text class="mark-all" @click="markAllRead">全部已读</text>
+        <text class="mark-all tap-sm" @click="markAllRead">全部已读</text>
       </view>
     </view>
 
     <!-- 公告列表 -->
-    <view class="card ann-card" v-for="a in list" :key="a.id" @click="goDetail(a)">
+    <view
+      class="card ann-card anim-rise tap"
+      v-for="(a, i) in list"
+      :key="a.id"
+      :style="{ animationDelay: (i % 10) * 40 + 'ms' }"
+      @click="goDetail(a)"
+    >
       <view class="a-top">
         <text class="a-level" :class="a.level">{{ levelText(a.level) }}</text>
         <text class="a-time">{{ a.created_at }}</text>
       </view>
       <view class="a-title-row">
-        <text class="a-dot" v-if="!a.read" />
+        <text class="a-dot anim-badge" v-if="!a.read" />
         <text class="a-title">{{ a.title }}</text>
       </view>
       <text class="a-brief">{{ a.content }}</text>
@@ -26,7 +32,7 @@
       </view>
     </view>
 
-    <view class="empty" v-if="!list.length && !loading"><text>暂无公告</text></view>
+    <view class="empty anim-rise" v-if="!list.length && !loading"><text>暂无公告</text></view>
     <view class="load-more" v-if="list.length"><text>{{ hasMore ? '上拉加载更多' : '没有更多了' }}</text></view>
   </view>
 </template>
@@ -110,6 +116,7 @@ onReachBottom(() => {
   font-size: 40rpx;
   font-weight: 700;
   color: #30343d;
+  font-variant-numeric: tabular-nums;
 }
 .s-num.warn { color: #f0654f; }
 .s-label {

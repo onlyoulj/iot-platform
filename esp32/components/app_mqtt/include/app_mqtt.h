@@ -5,7 +5,7 @@
  * 对接 iot-platform 平台约定（详见 E:/iot-platform/docs/MQTT.md）：
  *   - 下行（服务器→设备）：device/{id}/downlink   —— 设备订阅，接收指令
  *   - 上行（设备→服务器）：device/{id}/uplink     —— 升级进度 / 心跳
- *   - 信息上报（设备→服务器）：device/{id}/info   —— 电量/信号/MAC/版本/经纬度
+ *   - 信息上报（设备→服务器）：device/{id}/info   —— 电量/信号/SSID/IP/MAC/版本/经纬度
  *   - 消息信封：{"type":"upgrade|control|test|...","timestamp":"...","data":{...}}
  *
  * {id} 可为平台数字 ID 或 DeviceName(SN)；服务器会同时向两个主题发布，
@@ -105,6 +105,8 @@ typedef struct {
 typedef struct {
     bool        has_battery;      int32_t  battery;          /* 电量 0-100（平台也兼容 0-1 小数） */
     bool        has_signal;       int32_t  signal;           /* RSSI dBm 负值（平台也兼容 0-100 质量百分比） */
+    const char *ssid;             /* 当前 Wi-Fi 名称，如 "Office-5G" */
+    const char *ip;               /* 当前 IP 地址，如 "192.168.1.101" */
     const char *mac;              /* "AA:BB:CC:DD:EE:FF" */
     const char *hardware_version;
     const char *firmware_version;

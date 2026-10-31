@@ -1,7 +1,7 @@
 <template>
-  <view class="adetail" v-if="ann">
+  <view class="adetail anim-page" v-if="ann">
     <!-- 标题区 -->
-    <view class="head">
+    <view class="head anim-drop">
       <text class="head-title">{{ ann.title }}</text>
       <text class="head-sub">{{ ann.publisher }} 发布</text>
     </view>
@@ -14,7 +14,7 @@
     </view>
 
     <!-- 正文 -->
-    <view class="body">
+    <view class="body anim-rise" style="animation-delay: 60ms">
       <text class="content">{{ ann.content }}</text>
 
       <view class="kv"><text class="k">级别</text><text class="v" :class="ann.level">{{ levelText(ann.level) }}</text></view>
@@ -24,7 +24,7 @@
     </view>
 
     <!-- 未读时提供标记已读 -->
-    <view class="actions" v-if="!ann.read">
+    <view class="actions anim-rise" style="animation-delay: 120ms" v-if="!ann.read">
       <button class="btn-primary" @click="handleMarkRead">标记已读</button>
     </view>
     <view class="read-tip" v-else>

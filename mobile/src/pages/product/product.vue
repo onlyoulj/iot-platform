@@ -1,5 +1,5 @@
 <template>
-  <view class="product-page">
+  <view class="product-page anim-page">
     <!-- 搜索 -->
     <view class="search-bar">
       <input class="search-input" v-model="keyword" placeholder="搜索产品名称" placeholder-class="ph" />
@@ -7,7 +7,13 @@
 
     <!-- 产品列表 -->
     <view class="product-list">
-      <view class="product-card" v-for="p in filtered" :key="p.id" @click="goDetail(p)">
+      <view
+        class="product-card anim-rise tap"
+        v-for="(p, i) in filtered"
+        :key="p.id"
+        :style="{ animationDelay: (i % 10) * 40 + 'ms' }"
+        @click="goDetail(p)"
+      >
         <view class="p-icon" :style="{ background: p.color }">
           <text class="p-icon-txt">{{ p.name.slice(0, 1) }}</text>
         </view>
@@ -21,20 +27,20 @@
             <text class="p-stat-num">{{ p.device_count ?? 0 }}</text>
             <text class="p-stat-lbl">设备</text>
           </view>
-          <text class="p-del" @click.stop="handleDelete(p)">删除</text>
+          <text class="p-del tap-sm" @click.stop="handleDelete(p)">删除</text>
         </view>
       </view>
-      <view v-if="!filtered.length" class="empty">
+      <view v-if="!filtered.length" class="empty anim-rise">
         <text>{{ loading ? '加载中…' : '暂无产品' }}</text>
       </view>
     </view>
 
     <!-- 新增产品按钮 -->
-    <view class="fab" @click="openCreate">+</view>
+    <view class="fab anim-pop tap-sm" style="animation-delay: 120ms" @click="openCreate">+</view>
 
     <!-- 新增产品弹层 -->
-    <view class="mask" v-if="creating" @click="creating = false">
-      <view class="sheet" @click.stop>
+    <view class="mask anim-mask" v-if="creating" @click="creating = false">
+      <view class="sheet anim-sheet" @click.stop>
         <view class="sheet-head">
           <text class="sheet-title">新增产品</text>
           <text class="sheet-close" @click="creating = false">✕</text>
@@ -278,8 +284,19 @@ function handleDelete(p) {
   z-index: 50;
 }
 /* 新增弹层表单 */
+/* 新增弹层 */
+.mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+}
 .sheet {
   width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
   background: #ffffff;
   border-radius: 28rpx 28rpx 0 0;
   padding-bottom: calc(env(safe-area-inset-bottom) + 40rpx);

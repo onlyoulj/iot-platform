@@ -811,6 +811,8 @@ router.post('/:key/report', (req, res) => {
  * body（字段均可选，按需上报）：
  *   battery           电量百分比 0-100（也接受 0-1 小数）
  *   signal            信号强度 dBm 负值（也接受 0-100 质量百分比）
+ *   ssid              设备当前连接的 Wi-Fi 名称
+ *   ip                设备当前 IP 地址
  *   mac               MAC 地址
  *   hardware_version  硬件版本
  *   firmware_version  固件版本
@@ -843,6 +845,8 @@ router.post('/:key/info', (req, res) => {
       info: {
         battery: fresh.battery,
         signal: fresh.signal,
+        ssid: fresh.ssid,
+        ip: fresh.ip,
         mac: fresh.mac,
         hardware_version: fresh.hardware_version,
         firmware_version: fresh.firmware_version,

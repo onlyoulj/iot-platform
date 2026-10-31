@@ -1,8 +1,8 @@
 <template>
-  <view class="profile">
+  <view class="profile anim-page">
     <!-- 用户卡 -->
-    <view class="user-card">
-      <view class="avatar-wrap" @click="changeAvatar">
+    <view class="user-card anim-drop">
+      <view class="avatar-wrap tap-sm" @click="changeAvatar">
         <image v-if="avatarSrc" class="avatar-img" :src="avatarSrc" mode="aspectFill" />
         <view v-else class="avatar">{{ avatarChar }}</view>
         <view class="avatar-edit">换</view>
@@ -11,33 +11,33 @@
         <text class="u-name">{{ user?.nickname || user?.username || '未登录' }}</text>
         <text class="u-sub">{{ user?.group_name || user?.email || '' }}</text>
       </view>
-      <view class="points-badge">
+      <view class="points-badge anim-pop" style="animation-delay: 120ms">
         <text class="points-num">{{ user?.points ?? 10 }}</text>
         <text class="points-lbl">积分</text>
       </view>
     </view>
 
     <!-- 菜单 -->
-    <view class="card menu">
-      <view class="menu-item" @click="go('/pages/profile/server')">
+    <view class="card menu anim-rise" style="animation-delay: 80ms">
+      <view class="menu-item tap" @click="go('/pages/profile/server')">
         <text class="m-label">服务器设置</text>
         <text class="m-value">{{ serverLabel }}</text>
         <text class="m-arrow">›</text>
       </view>
-      <view class="menu-item" @click="go('/pages/profile/password')">
+      <view class="menu-item tap" @click="go('/pages/profile/password')">
         <text class="m-label">修改密码</text>
         <text class="m-arrow">›</text>
       </view>
     </view>
 
-    <view class="card menu">
-      <view class="menu-item" @click="logout">
+    <view class="card menu anim-rise" style="animation-delay: 140ms">
+      <view class="menu-item tap" @click="logout">
         <text class="m-label danger">退出登录</text>
         <text class="m-arrow">›</text>
       </view>
     </view>
 
-    <text class="version">IoT 移动端 v1.0.0</text>
+    <text class="version anim-page" style="animation-delay: 200ms">IoT 移动端 v1.0.0</text>
   </view>
 </template>
 
@@ -195,6 +195,11 @@ function logout() {
   align-items: center;
   padding: 30rpx 0;
   border-bottom: 1rpx solid #f0f1f4;
+  transition: transform 150ms var(--ease-soft), opacity 150ms var(--ease-soft),
+    background-color 0.2s var(--ease-out);
+}
+.menu-item:active {
+  background: #f7f9fd;
 }
 .menu-item:last-child {
   border-bottom: none;
@@ -218,6 +223,11 @@ function logout() {
 .m-arrow {
   color: #b3b8c2;
   font-size: 32rpx;
+  transition: transform 0.2s var(--ease-out), color 0.2s var(--ease-out);
+}
+.menu-item:active .m-arrow {
+  transform: translateX(4px);
+  color: #2b6de8;
 }
 .version {
   display: block;

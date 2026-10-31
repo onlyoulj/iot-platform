@@ -340,7 +340,7 @@ user_groups 1───N users          user_groups 1───N group_permissions
 | 表 | 说明 |
 | --- | --- |
 | `products` | 产品模型 |
-| `devices` | 设备档案（含 `active_time` 首次激活、`last_online` 最近上线、`group_id` 分组、`battery`/`signal`/`hardware_version`/`longitude`/`latitude`/`info_updated_at` 设备信息列） |
+| `devices` | 设备档案（含 `active_time` 首次激活、`last_online` 最近上线、`group_id` 分组、`ssid`/`ip`/`mac` 网络信息与 `battery`/`signal`/`hardware_version`/`longitude`/`latitude`/`info_updated_at` 设备信息列） |
 | `device_props` | 设备实时属性 |
 | `firmwares` | 固件元数据（含 MD5、状态、升级统计） |
 | `firmware_compat` | 固件兼容型号区间 |
@@ -459,7 +459,7 @@ MQTT 通道另有 `mqtt-repush.js` 在设备上线（`uplink`/`info`）时防抖
 | 属性历史 | `GET /api/devices/:id/props-history` | 物模型数值属性 `device_prop_history`（EAV，60s 去重） |
 | 生命周期时间轴 | `GET /api/devices/:id/timeline` | 聚合告警 / 控制 / 升级 / MQTT / 影子 / 创建激活六类事件 |
 
-设备信息上报（电量/信号/MAC/硬件版本/固件版本/经纬度）由 `device-info` 归一化落库并视为在线心跳；主通道为 MQTT `device/{id}/info` 与订阅接口 `POST /api/subscribe/:key/info`（详见 [INTEGRATION.md](./INTEGRATION.md) 与 [MQTT.md](./MQTT.md)）。告警规则引擎（`alert-engine` 挂 `device-monitor` 60s 扫描，分布式锁 + 冷却）命中即生成 `alerts` 并经 `alert-notify` 按渠道推送。
+设备信息上报（电量/信号/SSID/IP/MAC/硬件版本/固件版本/经纬度）由 `device-info` 归一化落库并视为在线心跳；主通道为 MQTT `device/{id}/info` 与订阅接口 `POST /api/subscribe/:key/info`（详见 [INTEGRATION.md](./INTEGRATION.md) 与 [MQTT.md](./MQTT.md)）。告警规则引擎（`alert-engine` 挂 `device-monitor` 60s 扫描，分布式锁 + 冷却）命中即生成 `alerts` 并经 `alert-notify` 按渠道推送。
 
 ---
 

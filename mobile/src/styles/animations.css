@@ -1,0 +1,151 @@
+/* ============================================================
+   移动端动效层（main.js 引入，全部页面生效）
+   约定：
+   - 只动 transform / opacity，避免触发重排
+   - 入场 260~420ms，点按反馈 140~150ms，统一 ease-out
+   - 使用 animation-fill-mode: backwards（不是 both），
+     动画结束后不残留 transform，保证 :active 缩放仍可生效
+   - 跟随系统「减少动态效果」自动降级
+   ============================================================ */
+
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ---------- 关键帧 ---------- */
+@keyframes anim-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes anim-rise-in {
+  from { opacity: 0; transform: translate3d(0, 12px, 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes anim-drop-in {
+  from { opacity: 0; transform: translate3d(0, -10px, 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes anim-pop-in {
+  0% { opacity: 0; transform: scale(0.88); }
+  65% { opacity: 1; transform: scale(1.02); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes anim-sheet-up {
+  from { transform: translate3d(0, 100%, 0); }
+  to { transform: none; }
+}
+@keyframes anim-mask-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes anim-panel-down {
+  from { opacity: 0; transform: translate3d(0, -8px, 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes anim-bar-grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+@keyframes anim-badge-pop {
+  0% { opacity: 0; transform: scale(0.4); }
+  60% { opacity: 1; transform: scale(1.18); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes anim-stripes {
+  from { background-position: 0 0; }
+  to { background-position: 20px 0; }
+}
+
+/* ---------- 入场工具类 ---------- */
+/* 页面淡入：只动 opacity，避免给 position: fixed 子元素制造包含块 */
+.anim-page { animation: anim-fade-in 260ms var(--ease-out) backwards; }
+/* 自下而上淡入：卡片、分区 */
+.anim-rise { animation: anim-rise-in 380ms var(--ease-out) backwards; }
+/* 自上而下淡入：顶部区、横幅 */
+.anim-drop { animation: anim-drop-in 380ms var(--ease-out) backwards; }
+/* 弹性放大：FAB、气泡、徽标 */
+.anim-pop { animation: anim-pop-in 340ms var(--ease-out) backwards; }
+/* 底部弹层：遮罩配 anim-mask */
+.anim-sheet { animation: anim-sheet-up 340ms var(--ease-out) backwards; }
+.anim-mask { animation: anim-mask-in 220ms var(--ease-soft) backwards; }
+/* 下拉面板 */
+.anim-panel { animation: anim-panel-down 240ms var(--ease-out) backwards; }
+/* 柱状图生长（需配合 transform-origin: bottom） */
+.anim-bar {
+  transform-origin: center bottom;
+  animation: anim-bar-grow 560ms var(--ease-out) backwards;
+}
+/* 数字徽标弹出 */
+.anim-badge { animation: anim-badge-pop 360ms var(--ease-out) backwards; }
+
+/* ---------- 点按反馈 ---------- */
+.tap {
+  transition: transform 150ms var(--ease-soft), opacity 150ms var(--ease-soft);
+}
+.tap:active {
+  transform: scale(0.97);
+  opacity: 0.88;
+}
+.tap-sm {
+  transition: transform 140ms var(--ease-soft), opacity 140ms var(--ease-soft);
+}
+.tap-sm:active {
+  transform: scale(0.93);
+  opacity: 0.85;
+}
+
+/* 原生 button 统一按压反馈 */
+uni-button {
+  transition: transform 150ms var(--ease-soft), opacity 150ms var(--ease-soft);
+}
+uni-button:active {
+  transform: scale(0.97);
+  opacity: 0.88;
+}
+
+/* 底部标签栏点按反馈 */
+.uni-tabbar__item {
+  transition: transform 150ms var(--ease-soft);
+}
+.uni-tabbar__item:active {
+  transform: scale(0.92);
+}
+
+/* ---------- 输入聚焦 ---------- */
+.input,
+.textarea,
+.picker {
+  transition: box-shadow 200ms var(--ease-soft), background-color 200ms var(--ease-soft);
+}
+.input:focus-within,
+.textarea:focus-within {
+  background-color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(43, 109, 232, 0.18);
+}
+
+/* 用缩放反馈替代系统灰色点击高亮 */
+uni-view,
+uni-button,
+uni-text {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 原生 toast / 对话框需要盖在底部弹层（1000）之上，
+   否则弹层内表单校验的提示会被遮罩挡住 */
+uni-toast,
+uni-modal {
+  z-index: 1100 !important;
+}
+
+/* ---------- 无障碍降级 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

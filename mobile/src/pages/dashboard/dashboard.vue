@@ -1,5 +1,5 @@
 <template>
-  <view class="dash">
+  <view class="dash anim-page">
     <scroll-view
       scroll-y
       class="scroll"
@@ -9,7 +9,7 @@
       @refresherrefresh="onRefresh"
     >
       <!-- 用户问候 -->
-      <view class="hello card">
+      <view class="hello card anim-rise">
         <view class="hello-left">
           <image v-if="avatarSrc" class="hello-avatar" :src="avatarSrc" mode="aspectFill" />
           <view v-else class="hello-avatar hello-avatar--txt">{{ avatarChar }}</view>
@@ -22,7 +22,12 @@
       </view>
 
       <!-- 未读公告滚动条（无未读隐藏） -->
-      <view class="notice-bar" v-if="annUnread > 0" @click="go('/pages/announcements/announcements')">
+      <view
+        class="notice-bar anim-drop tap"
+        style="animation-delay: 60ms"
+        v-if="annUnread > 0"
+        @click="go('/pages/announcements/announcements')"
+      >
         <text class="notice-ico">📢</text>
         <view class="notice-track">
           <view class="notice-scroll">
@@ -34,7 +39,13 @@
 
       <!-- 统计卡（可点击跳转） -->
       <view class="stat-grid">
-        <view class="stat" v-for="s in statCards" :key="s.key" @click="go(s.path)">
+        <view
+          class="stat anim-rise tap"
+          v-for="(s, i) in statCards"
+          :key="s.key"
+          :style="{ animationDelay: i * 50 + 'ms' }"
+          @click="go(s.path)"
+        >
           <text class="stat-num" :style="{ color: s.color }">{{ s.value }}</text>
           <text class="stat-label">{{ s.label }}</text>
           <text class="stat-go">›</text>
@@ -42,7 +53,7 @@
       </view>
 
       <!-- 在线趋势（纯 CSS 柱状，点击显值） -->
-      <view class="card">
+      <view class="card anim-rise" style="animation-delay: 140ms">
         <view class="card-title">
           <text>设备在线趋势</text>
           <view class="range-tabs">
@@ -57,22 +68,22 @@
             @click="onBarTap(item, i)"
           >
             <view class="bar-col">
-              <view class="bar" :style="{ height: barHeight(item.online) }" />
+              <view class="bar anim-bar" :style="{ height: barHeight(item.online), animationDelay: Math.min(i, 14) * 26 + 'ms' }" />
             </view>
             <text class="bar-label">{{ item.date }}</text>
           </view>
         </view>
-        <text v-if="bubble" class="bubble">{{ bubble }}</text>
+        <text v-if="bubble" class="bubble anim-pop">{{ bubble }}</text>
       </view>
 
       <!-- 快捷入口（图标跳转） -->
-      <view class="card quick">
+      <view class="card quick anim-rise" style="animation-delay: 200ms">
         <text class="card-title">快捷操作</text>
         <view class="quick-grid">
-          <view class="quick-item" v-for="q in quickList" :key="q.path" @click="go(q.path)">
+          <view class="quick-item tap" v-for="q in quickList" :key="q.path" @click="go(q.path)">
             <view class="q-icon-wrap">
               <text class="q-emoji" :class="{ shake: q.key === 'announcement' && annUnread > 0 }">{{ q.icon }}</text>
-              <text v-if="q.key === 'announcement' && annUnread > 0" class="q-badge">{{ annUnread > 99 ? '99+' : annUnread }}</text>
+              <text v-if="q.key === 'announcement' && annUnread > 0" class="q-badge anim-badge">{{ annUnread > 99 ? '99+' : annUnread }}</text>
             </view>
             <text>{{ q.label }}</text>
           </view>
@@ -86,11 +97,13 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { dashboardApi, announcementApi, staticUrl } from '../../utils/api'
+import { useCountUp } from '../../utils/motion'
 
 const user = ref(uni.getStorageSync('user'))
 const avatarChar = computed(() => String(user.value?.nickname || user.value?.username || '用').slice(0, 1).toUpperCase())
 const avatarSrc = computed(() => staticUrl(user.value?.avatar_url || ''))
-const stats = ref({})
+// 统计数字滚动：首次从 0 缓动到接口值，后续刷新从旧值过渡到新值
+const countUp = useCountUp(['deviceCount', 'onlineCount', 'firmwareCount', 'todayAlerts'])
 const trend = ref([])
 const days = ref(7)
 const refreshing = ref(false)
@@ -101,10 +114,10 @@ const bubble = ref('')
 let bubbleTimer = null
 
 const statCards = computed(() => [
-  { key: 'device', label: '设备总数', value: stats.value.deviceCount ?? '-', color: '#2b6de8', path: '/pages/devices/devices' },
-  { key: 'online', label: '在线设备', value: stats.value.onlineCount ?? '-', color: '#22b07d', path: '/pages/devices/devices?status=online' },
-  { key: 'firmware', label: '固件数', value: stats.value.firmwareCount ?? '-', color: '#8a63f4', path: '/pages/firmware/firmware' },
-  { key: 'alert', label: '今日告警', value: stats.value.todayAlerts ?? '-', color: '#f0654f', path: '/pages/alerts/alerts' },
+  { key: 'device', label: '设备总数', value: countUp.values.deviceCount ?? '-', color: '#2b6de8', path: '/pages/devices/devices' },
+  { key: 'online', label: '在线设备', value: countUp.values.onlineCount ?? '-', color: '#22b07d', path: '/pages/devices/devices?status=online' },
+  { key: 'firmware', label: '固件数', value: countUp.values.firmwareCount ?? '-', color: '#8a63f4', path: '/pages/firmware/firmware' },
+  { key: 'alert', label: '今日告警', value: countUp.values.todayAlerts ?? '-', color: '#f0654f', path: '/pages/alerts/alerts' },
 ])
 
 const quickList = [
@@ -134,7 +147,7 @@ function barHeight(v) {
 async function load() {
   try {
     const [s, t] = await Promise.all([dashboardApi.stats(), dashboardApi.trend(days.value)])
-    stats.value = s || {}
+    countUp.update(s)
     trend.value = t || []
     serverOk.value = true
   } catch (e) {
@@ -237,6 +250,7 @@ function go(url) {
   background: #fdeeec;
   padding: 6rpx 20rpx;
   border-radius: 24rpx;
+  transition: color 0.25s var(--ease-out), background-color 0.25s var(--ease-out);
 }
 .hello-badge.ok {
   color: #22b07d;
@@ -263,6 +277,7 @@ function go(url) {
   font-size: 44rpx;
   font-weight: 700;
   display: block;
+  font-variant-numeric: tabular-nums;
 }
 .stat-label {
   font-size: 24rpx;
@@ -276,6 +291,11 @@ function go(url) {
   top: 28rpx;
   font-size: 36rpx;
   color: #d6dce5;
+  transition: transform 0.2s var(--ease-out), color 0.2s var(--ease-out);
+}
+.stat:active .stat-go {
+  transform: translateX(4px);
+  color: #2b6de8;
 }
 .card-title {
   font-size: 30rpx;
@@ -296,6 +316,7 @@ function go(url) {
   padding: 6rpx 18rpx;
   border-radius: 22rpx;
   font-weight: 400;
+  transition: color 0.2s var(--ease-out), background-color 0.2s var(--ease-out);
 }
 .range-tab.active {
   color: #2b6de8;
@@ -362,9 +383,6 @@ function go(url) {
   font-size: 24rpx;
   color: #5a6070;
   padding: 20rpx 0;
-}
-.quick-item:active {
-  opacity: 0.6;
 }
 .q-icon-wrap {
   position: relative;

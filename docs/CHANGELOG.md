@@ -4,6 +4,27 @@
 
 ---
 
+## 2026-10-31 MQTT / API 监控条目支持详情查看
+
+- MQTT 监控页「最近行为」、API 统计页「最近调用」与「慢请求 Top 10」的表格行支持点击打开详情抽屉，也可点行末「查看」按钮。
+- 详情抽屉展示该条日志的完整字段（时间、事件/方法、方向/路由、设备/调用者、状态、耗时、主题/路径等）以及原始记录 JSON，便于排查。
+- 纯前端展示增强，接口与数据库结构不变。
+
+---
+
+## 2026-10-31 设备信息上报新增 SSID / IP（API.md §2.2、§8；MQTT.md §5.3）
+
+`device/{id}/info` 与 HTTP 兜底 `POST /api/subscribe/:key/info` 新增两个可选字段，既有报文无需修改：
+
+| 字段 | 说明 | 兼容别名 |
+| --- | --- | --- |
+| `ssid` | 设备当前连接的 Wi-Fi 名称 | `wifi_ssid`、`wifiSsid` |
+| `ip` | 设备当前 IP 地址 | `ip_address`、`ipaddr`、`local_ip` |
+
+数据库 `devices` 表新增 `ssid TEXT DEFAULT '--'`（老库启动由 `migrateDeviceColumns` 幂等补列；`ip` 列沿用原字段），详情页在 MAC 上方展示 SSID 与 IP。管理端设备详情抽屉、移动端设备详情页均已同步。
+
+---
+
 ## 2026-10-16 系统公告功能（新增接口，API.md §17）
 
 新增系统公告模块：发布、修改、删除、按用户已读。**新增权限点** `announcement:view`（各内置组已自动补齐）/ `announcement:manage`（超管），数据库新增 `announcements` + `announcement_reads` 表（老库启动自动建表 + 补种子 2 条示例公告）。

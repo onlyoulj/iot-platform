@@ -224,7 +224,7 @@
 
 **GET `/:id/timeline` → `data`**：`[{ type, status, title, detail, time }]`，`type ∈ alert / command / upgrade / mqtt / shadow / lifecycle`。聚合告警、控制日志、升级任务、MQTT 日志、影子变更与创建/激活事件，`limit` 默认 100（夹 1–300）。
 
-**POST `/:id/info` 请求体**：`{ battery, signal, mac, hardware_version, firmware_version, longitude, latitude, location }`，字段均可选、仅更新提供的字段。归一化：电量 `0–1` 小数 ×100 得百分比；信号质量 `%` → dBm；经纬度越界丢弃；上报视为在线心跳（`fault` 保持）。设备侧主通道为 MQTT `device/{id}/info` 或订阅接口 `POST /api/subscribe/:key/info`（见 §8 与 [INTEGRATION.md](./INTEGRATION.md)）。
+**POST `/:id/info` 请求体**：`{ battery, signal, ssid, ip, mac, hardware_version, firmware_version, longitude, latitude, location }`，字段均可选、仅更新提供的字段。归一化：电量 `0–1` 小数 ×100 得百分比；信号质量 `%` → dBm；经纬度越界丢弃；SSID/IP 去首尾空白；上报视为在线心跳（`fault` 保持）。设备侧主通道为 MQTT `device/{id}/info` 或订阅接口 `POST /api/subscribe/:key/info`（见 §8 与 [INTEGRATION.md](./INTEGRATION.md)）。
 
 ---
 
@@ -869,6 +869,8 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 {
   "battery": 88,
   "signal": -65,
+  "ssid": "Office-5G",
+  "ip": "192.168.1.101",
   "mac": "AA:BB:CC:DD:EE:FF",
   "hardware_version": "v1.1",
   "firmware_version": "v1.0.0",
@@ -878,9 +880,9 @@ job `status` 取值：`pending`（待推送）/ `pushing`（已推送）/ `upgra
 }
 ```
 
-归一化规则同 §2.2 的 `POST /:id/info`（电量 0–1 小数自动 ×100、信号质量 % → dBm、经纬度越界丢弃），并视为在线心跳。
+归一化规则同 §2.2 的 `POST /:id/info`（电量 0–1 小数自动 ×100、信号质量 % → dBm、经纬度越界丢弃、SSID/IP 去首尾空白），并视为在线心跳。
 
-**响应 `data`**：`{ device_id, device_name, updated: [已更新字段名], info: { battery, signal, mac, hardware_version, firmware_version, longitude, latitude, location, info_updated_at } }`。未提供任何可更新字段返回 `400`。
+**响应 `data`**：`{ device_id, device_name, updated: [已更新字段名], info: { battery, signal, ssid, ip, mac, hardware_version, firmware_version, longitude, latitude, location, info_updated_at } }`。未提供任何可更新字段返回 `400`。
 
 ### 设备端接入示例
 

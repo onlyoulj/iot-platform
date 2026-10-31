@@ -1,7 +1,7 @@
 <template>
-  <view class="ota-detail" v-if="task">
+  <view class="ota-detail anim-page" v-if="task">
     <!-- 任务概要 -->
-    <view class="card">
+    <view class="card anim-rise">
       <view class="task-head">
         <text class="task-name">{{ task.name }}</text>
         <text class="task-status" :class="task.status">{{ statusText(task.status) }}</text>
@@ -17,7 +17,7 @@
     </view>
 
     <!-- 进度统计 -->
-    <view class="card">
+    <view class="card anim-rise" style="animation-delay: 60ms">
       <text class="sec-title">升级进度</text>
       <view class="stat-row">
         <view class="stat-item"><text class="stat-num">{{ task.total || 0 }}</text><text class="stat-label">总数</text></view>
@@ -25,7 +25,7 @@
         <view class="stat-item"><text class="stat-num fail">{{ task.failed || 0 }}</text><text class="stat-label">失败</text></view>
         <view class="stat-item"><text class="stat-num run">{{ task.running || 0 }}</text><text class="stat-label">进行中</text></view>
       </view>
-      <view class="progress-bar" v-if="task.total">
+      <view class="progress-bar" :class="{ running: task.status === 'running' }" v-if="task.total">
         <view class="progress-done" :style="{ width: pct(task.done, task.total) + '%' }" />
         <view class="progress-fail" :style="{ width: pct(task.failed, task.total) + '%' }" v-if="task.failed" />
       </view>
@@ -33,7 +33,7 @@
     </view>
 
     <!-- 操作按钮 -->
-    <view class="card actions-card" v-if="canOperate">
+    <view class="card actions-card anim-rise" style="animation-delay: 100ms" v-if="canOperate">
       <view class="action-row">
         <button v-if="task.status === 'running'" class="btn-warn" @click="doAction('pause')">暂停</button>
         <button v-if="task.status === 'paused'" class="btn-primary" @click="doAction('resume')">恢复</button>
@@ -44,7 +44,7 @@
     </view>
 
     <!-- 失败设备 -->
-    <view class="card" v-if="task.failDevices && task.failDevices.length">
+    <view class="card anim-rise" style="animation-delay: 140ms" v-if="task.failDevices && task.failDevices.length">
       <text class="sec-title">失败设备（{{ task.failDevices.length }}）</text>
       <view class="fail-item" v-for="(fd, i) in task.failDevices" :key="i">
         <text class="fail-dev">{{ fd.device }}</text>
@@ -54,10 +54,10 @@
     </view>
 
     <!-- 设备级 Job 明细 -->
-    <view class="card">
+    <view class="card anim-rise" style="animation-delay: 180ms">
       <view class="jobs-head">
         <text class="sec-title">设备明细（{{ jobs.length }}）</text>
-        <text class="refresh-btn" @click="loadJobs">刷新</text>
+        <text class="refresh-btn tap-sm" @click="loadJobs">刷新</text>
       </view>
       <view class="job-item" v-for="j in jobs" :key="j.id">
         <view class="job-top">
@@ -243,8 +243,21 @@ onShow(() => {
   display: flex;
   overflow: hidden;
 }
-.progress-done { background: #22b07d; }
-.progress-fail { background: #f0654f; }
+.progress-done { background: #22b07d; transition: width 0.6s var(--ease-out); }
+.progress-fail { background: #f0654f; transition: width 0.6s var(--ease-out); }
+.progress-bar.running .progress-done {
+  background-image: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.3) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.3) 50%,
+    rgba(255, 255, 255, 0.3) 75%,
+    transparent 75%
+  );
+  background-size: 20rpx 20rpx;
+  animation: anim-stripes 0.8s linear infinite;
+}
 .progress-pct {
   display: block;
   text-align: center;

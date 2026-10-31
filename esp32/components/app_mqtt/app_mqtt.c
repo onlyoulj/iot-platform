@@ -517,6 +517,8 @@ int app_mqtt_report_info(const app_mqtt_device_info_t *info)
     cJSON *root = cJSON_CreateObject();
     if (info->has_battery)  cJSON_AddNumberToObject(root, "battery", info->battery);
     if (info->has_signal)   cJSON_AddNumberToObject(root, "signal", info->signal);
+    if (info->ssid)              cJSON_AddStringToObject(root, "ssid", info->ssid);
+    if (info->ip)                cJSON_AddStringToObject(root, "ip", info->ip);
     if (info->mac)               cJSON_AddStringToObject(root, "mac", info->mac);
     if (info->hardware_version) cJSON_AddStringToObject(root, "hardware_version", info->hardware_version);
     if (info->firmware_version) cJSON_AddStringToObject(root, "firmware_version", info->firmware_version);

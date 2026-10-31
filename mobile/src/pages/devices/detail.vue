@@ -1,7 +1,7 @@
 <template>
-  <view class="detail" v-if="device">
+  <view class="detail anim-page" v-if="device">
     <!-- 顶部概要卡 -->
-    <view class="hero">
+    <view class="hero anim-drop">
       <view class="hero-head">
         <text class="dev-name">{{ device.name || device.device_name }}</text>
         <text class="dev-status" :class="device.status">{{ statusText(device.status) }}</text>
@@ -16,7 +16,7 @@
           <text class="hm-val">{{ device.signal ? device.signal : '--' }}</text>
           <text class="hm-label">信号 dBm</text>
         </view>
-        <view class="hm-item" @click="goFirmware">
+        <view class="hm-item tap-sm" @click="goFirmware">
           <text class="hm-val link">{{ fmtFirmware(device.firmware_version) }}</text>
           <text class="hm-label">固件 ›</text>
         </view>
@@ -24,7 +24,7 @@
     </view>
 
     <!-- 基本信息 -->
-    <view class="card">
+    <view class="card anim-rise" style="animation-delay: 60ms">
       <text class="sec-title">基本信息</text>
       <view class="kv" v-for="row in infoRows" :key="row.k" @click="row.go && row.go()">
         <text class="k">{{ row.k }}</text>
@@ -33,7 +33,7 @@
     </view>
 
     <!-- 页签区 -->
-    <view class="tabs-bar">
+    <view class="tabs-bar anim-rise" style="animation-delay: 100ms">
       <text
         v-for="t in tabs"
         :key="t.key"
@@ -44,7 +44,7 @@
     </view>
 
     <!-- 远程控制 -->
-    <view class="card" v-if="tab === 'control'">
+    <view class="card anim-rise" v-if="tab === 'control'">
       <view class="field">
         <text class="label">指令</text>
         <picker :range="commandOptions" range-key="label" @change="onPickCommand">
@@ -79,7 +79,7 @@
     </view>
 
     <!-- 设备影子 -->
-    <view class="card" v-if="tab === 'shadow'">
+    <view class="card anim-rise" v-if="tab === 'shadow'">
       <view class="shadow-sec" v-if="hasDesired">
         <text class="sec-title">期望值 desired</text>
         <view class="kv" v-for="(v, k) in shadow.desired" :key="'d' + k">
@@ -99,7 +99,7 @@
     </view>
 
     <!-- 指标趋势 -->
-    <view class="card" v-if="tab === 'metrics'">
+    <view class="card anim-rise" v-if="tab === 'metrics'">
       <view class="range-row">
         <text class="sec-title">电量 / 信号趋势</text>
         <view class="range-tabs">
@@ -119,7 +119,7 @@
         <view class="chart">
           <view class="bar-wrap" v-for="(p, i) in batteryBars" :key="'b' + i" @click="onMetricTap('battery', i)">
             <view class="bar-col">
-              <view class="bar battery" :style="{ height: p.h }" />
+              <view class="bar battery anim-bar" :style="{ height: p.h, animationDelay: Math.min(i, 20) * 18 + 'ms' }" />
             </view>
           </view>
         </view>
@@ -138,7 +138,7 @@
         <view class="chart">
           <view class="bar-wrap" v-for="(p, i) in signalBars" :key="'s' + i" @click="onMetricTap('signal', i)">
             <view class="bar-col">
-              <view class="bar signal" :style="{ height: p.h }" />
+              <view class="bar signal anim-bar" :style="{ height: p.h, animationDelay: Math.min(i, 20) * 18 + 'ms' }" />
             </view>
           </view>
         </view>
@@ -152,13 +152,13 @@
           <text class="stat-max">最强 {{ signalStats.max }} dBm</text>
         </view>
         <text class="sec-sub">数据源 {{ metricSourceText }} · {{ metricPoints.length }} 个采样点</text>
-        <text v-if="metricBubble" class="bubble">{{ metricBubble }}</text>
+        <text v-if="metricBubble" class="bubble anim-pop">{{ metricBubble }}</text>
       </view>
       <view class="empty" v-else><text>{{ metricsLoaded ? '该时间窗暂无指标数据' : '加载中…' }}</text></view>
     </view>
 
     <!-- 设备属性（物模型上报的历史属性） -->
-    <view class="card" v-if="tab === 'props'">
+    <view class="card anim-rise" v-if="tab === 'props'">
       <text class="sec-title">设备属性（device_props）</text>
       <view v-if="device.props && device.props.length">
         <view class="prop-item" v-for="p in device.props" :key="p.name">
@@ -173,10 +173,15 @@
     </view>
 
     <!-- 生命周期时间轴 -->
-    <view class="card" v-if="tab === 'timeline'">
+    <view class="card anim-rise" v-if="tab === 'timeline'">
       <text class="sec-title">生命周期事件</text>
       <view v-if="timeline.length">
-        <view class="tl-item" v-for="(e, i) in timeline" :key="i">
+        <view
+          class="tl-item anim-rise"
+          v-for="(e, i) in timeline"
+          :key="i"
+          :style="{ animationDelay: (i % 10) * 35 + 'ms' }"
+        >
           <view class="tl-dot" :class="'tl-' + e.type" />
           <view class="tl-body">
             <view class="tl-top">
@@ -198,11 +203,11 @@
     </view>
 
     <!-- 接入文档弹层 -->
-    <view class="mask" v-if="docVisible" @click="docVisible = false">
-      <view class="doc-sheet" @click.stop>
+    <view class="mask anim-mask" v-if="docVisible" @click="docVisible = false">
+      <view class="doc-sheet anim-sheet" @click.stop>
         <view class="doc-head">
           <text class="doc-title">设备接入文档</text>
-          <text class="doc-close" @click="docVisible = false">✕</text>
+          <text class="doc-close tap-sm" @click="docVisible = false">✕</text>
         </view>
         <scroll-view scroll-y class="doc-body">
           <text class="doc-intro">设备「{{ device.name || device.device_name }}」（SN：{{ device.device_name }}）接入平台的三种方式，任选其一即可。</text>
@@ -273,6 +278,7 @@ const infoRows = computed(() => {
     },
     { k: '分组', v: d.group_name || '未分组' },
     { k: '硬件版本', v: d.hardware_version || '--' },
+    { k: 'SSID', v: d.ssid && d.ssid !== '--' ? d.ssid : '--' },
     { k: 'IP 地址', v: d.ip && d.ip !== '--' ? d.ip : '--' },
     { k: 'MAC', v: d.mac && d.mac !== '--' ? d.mac : '--' },
     { k: '安装位置', v: d.location || '--' },
@@ -729,6 +735,7 @@ onPullDownRefresh(async () => {
   color: #5a6070;
   padding: 16rpx 0;
   border-radius: 16rpx;
+  transition: color 0.2s var(--ease-out), background-color 0.2s var(--ease-out);
 }
 .tab-item.small {
   font-size: 23rpx;
@@ -844,6 +851,7 @@ onPullDownRefresh(async () => {
   background: #f5f6fa;
   padding: 6rpx 20rpx;
   border-radius: 22rpx;
+  transition: color 0.2s var(--ease-out), background-color 0.2s var(--ease-out);
 }
 .range-tab.active {
   color: #ffffff;
@@ -881,6 +889,10 @@ onPullDownRefresh(async () => {
   width: 70%;
   min-width: 6rpx;
   border-radius: 6rpx 6rpx 0 0;
+  transition: opacity 0.15s var(--ease-soft);
+}
+.bar-wrap:active .bar {
+  opacity: 0.65;
 }
 .bar.battery {
   background: linear-gradient(180deg, #4fd6a0, #22b07d);
@@ -1038,7 +1050,7 @@ onPullDownRefresh(async () => {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 100;
+  z-index: 1000;
   display: flex;
   align-items: flex-end;
 }

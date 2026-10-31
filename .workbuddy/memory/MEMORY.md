@@ -38,7 +38,8 @@
 - publishToDevice 优先 MQTT 长连接，失败走 EMQX REST API（MQTT_REST_FALLBACK 热更新控制）。REST 字段名 payload_encoding；Serverless 分页用 _page/_limit；REST API 地址独立配置勿拼接。消息信封 `{type,timestamp,data}`，type=upgrade/control/test。文档 docs/MQTT.md，实测平均延迟 68ms。
 
 ## 设备信息上报
-- services/device-info.js applyDeviceInfo()：字段别名 bat/power、rssi/csq、mac_address、hw_version/lng/lon/lat 等；归一化（电量 0-1 小数×100、信号质量%→dBm、经纬度越界丢弃）；支持 {type:'info',data:{}} 包裹；**上报视为在线心跳**（fault 保持）。三入口：MQTT /info、POST /api/subscribe/:key/info（设备 token）、POST /api/devices/:id/info（device:edit 补录）。devices 表新增 battery/signal/hardware_version/longitude/latitude/info_updated_at，migrateDeviceColumns 幂等迁移。
+- services/device-info.js applyDeviceInfo()：字段别名 bat/power、rssi/csq、ssid=wifi_ssid/wifiSsid、ip=ip_address/ipaddr/local_ip、mac_address、hw_version/lng/lon/lat 等；归一化（电量 0-1 小数×100、信号质量%→dBm、经纬度越界丢弃、SSID/IP trim 截断 64）；支持 {type:'info',data:{}} 包裹；**上报视为在线心跳**（fault 保持）。三入口：MQTT /info、POST /api/subscribe/:key/info（设备 token）、POST /api/devices/:id/info（device:edit 补录）。devices 表新增 battery/signal/ssid/hardware_version/longitude/latitude/info_updated_at，migrateDeviceColumns 幂等迁移。
+- SSID/IP 展示（2026-10-31）：管理端设备详情抽屉与移动端详情基本信息均在 MAC 上方依次展示 SSID、IP 地址；`ssid` 列为新增（默认 '--'），`ip` 复用原 devices.ip 字段。⚠️ 本机 .env.development 的 VITE_PROXY_TARGET 指向 192.168.0.127:3000，本机联调要临时覆盖为 127.0.0.1:3000。
 - 指标历史趋势（2026-10-15）：device_metrics 表 + services/device-metrics.js；SQLite 90 天底座 + Redis List `device:metrics:{id}`（1440 条/TTL 7 天）双写；60s 采样去重；≤24h 且 Redis 窗口覆盖优先读 Redis，否则 SQLite 分桶 AVG（>500 点）；`GET /api/devices/:id/metrics?range=1h|6h|24h|7d|30d`；前端详情抽屉 VChart 双 Y 轴趋势图 + dataZoom。
 
 ## 固件订阅/激活/OTA
@@ -99,3 +100,9 @@
 - 设备详情页：5 页签（远程控制/设备影子/指标趋势/设备属性/生命周期）+ 顶部概要卡 + 12 行基本信息 + 下拉刷新；指标趋势纯 CSS 双图（电量绝对比例、信号相对缩放，≤24 柱）+ Redis/SQLite 数据源标注；生命周期 timeline 彩色圆点。切页签懒加载。
 - 移动端交互（第三轮）：① 图表柱子点击显示气泡数值；② 概览统计卡+快捷入口图标可点跳转；③ 设备列表显示分组+分组筛选下拉（group_id 子树筛选）；④ 详情页固件栏可点跳转固件管理页（按 product_name 筛选）；⑤ 新增固件管理页 firmware.vue。
 - 移动端管理功能（第四轮）：① 设备增删改（FAB+底部表单弹层，编辑/删除操作按钮）；② 固件上传/发布/废弃/删除（uni.uploadFile 走 H5 ObjectURL）；③ OTA 全新页面（列表+创建任务弹层+暂停/恢复/推送/取消操作+任务详情含设备级 Job 明细）。详见 memory/2026-10-16.md。
+- 移动端动效层（2026-10-31）：`src/styles/animations.css`（global，main.js 引入）+ `src/utils/motion.js`。工具类 `anim-page/rise/drop/pop/sheet/mask/panel/bar/badge`，点按 `tap/tap-sm`；`animation-fill-mode: backwards` 保证动画后 `:active` 可用；`prefers-reduced-motion` 全局降级（本机/IAB 默认 reduce，验证需临时删 media rule）。数字滚动用 setInterval（rAF 在后台 WebView 会挂起）。底部弹层 z-index 1000（uni-tabbar 998），uni-toast/uni-modal 1100。H5 与 App 平台预编译均通过（App 必须从 `D:/HBuilderX/plugins/uniapp-cli-vite` 用 Node22 跑 `uni.js build build -p app`）。详见 memory/2026-10-31.md。
+
+## 监控详情与 NAS 部署（2026-10-31）
+- MQTT 监控「最近行为」、API 统计「最近调用 / 慢请求 Top 10」均支持行点击或行末「查看」打开 `el-drawer`，展示完整字段 + 原始记录 JSON；纯前端改动，接口/表结构不变。
+- NAS 部署目录可直接走 SMB：`//192.168.0.127/www/iot-plantform/back/server`（后端源码）、`//192.168.0.127/www/iot-plantform/dist`（管理端产物）；前端静态更新后浏览器需 Ctrl+F5。后端改代码后仍需重启 NAS 上的 Node 进程（无 SSH key，SMB 只能改文件）。
+- ⚠️ 本机 Vite dev 可能因根目录 `server.zip` 被占用报 `EBUSY: watch`；验证构建产物用 `vite preview` 更稳。

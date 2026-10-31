@@ -185,7 +185,9 @@
           </el-table>
           <p class="hint">
             设备信息上报（<code class="inline">device/{id}/info</code>）所有字段可选，只更新提供的字段。字段别名兼容：
-            <code class="inline">battery</code>=bat/power、<code class="inline">signal</code>=rssi/csq、<code class="inline">mac</code>=mac_address、
+            <code class="inline">battery</code>=bat/power、<code class="inline">signal</code>=rssi/csq、
+            <code class="inline">ssid</code>=wifi_ssid、<code class="inline">ip</code>=ip_address、
+            <code class="inline">mac</code>=mac_address、
             <code class="inline">hardware_version</code>=hw_version、<code class="inline">firmware_version</code>=fw_version、
             <code class="inline">longitude</code>=lng/lon、<code class="inline">latitude</code>=lat。详见 <code class="inline">docs/MQTT.md</code> §5.3。
           </p>
@@ -347,7 +349,7 @@ if (resp.update_available) {
 const mqttTopics = [
   { dir: '下行（服务器→设备）', topic: 'device/{id}/downlink', desc: '设备订阅此主题接收指令（升级/控制/测试）' },
   { dir: '上行（设备→服务器）', topic: 'device/{id}/uplink', desc: '设备发布此主题上报状态（升级进度/心跳）' },
-  { dir: '上行（设备→服务器）', topic: 'device/{id}/info', desc: '设备发布此主题上报设备信息（电量/信号/MAC/硬件版本/固件版本/经纬度）' },
+  { dir: '上行（设备→服务器）', topic: 'device/{id}/info', desc: '设备发布此主题上报设备信息（电量/信号/SSID/IP/MAC/硬件版本/固件版本/经纬度）' },
 ]
 
 const mqttMsgSample = `{

@@ -74,7 +74,16 @@
         <h3>最近行为</h3>
         <el-button size="small" :icon="Refresh" @click="loadRecent">刷新</el-button>
       </div>
-      <el-table :data="recentList" size="small" style="width: 100%" v-loading="recentLoading" empty-text="暂无记录" max-height="420">
+      <el-table
+        :data="recentList"
+        size="small"
+        style="width: 100%"
+        v-loading="recentLoading"
+        empty-text="暂无记录"
+        max-height="420"
+        :row-style="{ cursor: 'pointer' }"
+        @row-click="openDetail"
+      >
         <el-table-column label="时间" width="170">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
@@ -122,9 +131,14 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="详情" min-width="160" show-overflow-tooltip>
+        <el-table-column label="摘要" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="muted">{{ row.detail || '—' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="72" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click.stop="openDetail(row)">查看</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -140,6 +154,39 @@
         />
       </div>
     </div>
+
+    <!-- 日志详情 -->
+    <el-drawer v-model="detailVisible" title="MQTT 日志详情" size="560px" destroy-on-close>
+      <template v-if="detailRow">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="日志 ID">{{ detailRow.id }}</el-descriptions-item>
+          <el-descriptions-item label="时间">{{ formatDateTime(detailRow.created_at) }}</el-descriptions-item>
+          <el-descriptions-item label="事件">
+            <el-tag :type="eventTagType(detailRow.event_type)" size="small">{{ eventLabel(detailRow.event_type) }}</el-tag>
+            <span class="muted inline-extra">{{ detailRow.event_type }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="方向">{{ directionLabel(detailRow.direction) }}</el-descriptions-item>
+          <el-descriptions-item label="通道">{{ channelLabel(detailRow.channel) }}</el-descriptions-item>
+          <el-descriptions-item label="设备名称">{{ orDash(detailRow.device_name) }}</el-descriptions-item>
+          <el-descriptions-item label="设备 ID">{{ orDash(detailRow.device_id) }}</el-descriptions-item>
+          <el-descriptions-item label="消息类型">{{ orDash(detailRow.message_type) }}</el-descriptions-item>
+          <el-descriptions-item label="主题">
+            <span class="mono">{{ orDash(detailRow.topic) }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="detailRow.status === 'success' ? 'success' : 'danger'" size="small">
+              {{ detailRow.status === 'success' ? '成功' : '失败' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="详情">{{ orDash(detailRow.detail) }}</el-descriptions-item>
+        </el-descriptions>
+
+        <div class="drawer-section">
+          <h4>原始记录</h4>
+          <pre class="detail-json">{{ detailJson }}</pre>
+        </div>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -149,7 +196,7 @@ import { Refresh } from '@element-plus/icons-vue'
 import { mqttLogApi } from '@/utils/api'
 import { useAsyncData } from '@/composables/useAsyncData'
 import StatCards from '@/components/StatCards.vue'
-import { formatDateTime } from '@/utils/format'
+import { formatDateTime, orDash } from '@/utils/format'
 
 /* ---------------- 总览 ---------------- */
 const overview = ref({})
@@ -269,6 +316,28 @@ async function loadRecent() {
   }
 }
 
+/* ---------------- 日志详情 ---------------- */
+const detailVisible = ref(false)
+const detailRow = ref(null)
+const detailJson = computed(() => (detailRow.value ? JSON.stringify(detailRow.value, null, 2) : ''))
+
+function openDetail(row) {
+  detailRow.value = row
+  detailVisible.value = true
+}
+
+function directionLabel(direction) {
+  if (direction === 'out') return '↓ 下行'
+  if (direction === 'in') return '↑ 上行'
+  return '—'
+}
+
+function channelLabel(channel) {
+  if (channel === 'mqtt-client') return 'MQTT 长连接'
+  if (channel === 'rest-api') return 'REST API'
+  return channel || '—'
+}
+
 /* ---------------- 工具函数 ---------------- */
 const EVENT_LABELS = {
   connect: '连接',
@@ -343,6 +412,30 @@ onMounted(async () => {
 .muted {
   color: #909399;
   font-size: 12px;
+}
+.inline-extra {
+  margin-left: 8px;
+}
+.drawer-section {
+  margin-top: 18px;
+}
+.drawer-section h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.detail-json {
+  margin: 0;
+  padding: 12px;
+  max-height: 360px;
+  overflow: auto;
+  background: #f5f7fa;
+  border-radius: 6px;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 .bold {
   font-weight: 600;

@@ -2,7 +2,7 @@
  * 设备信息上报服务
  * ------------------------------------------------------------------
  * 设备通过 MQTT 发布设备信息到 `device/{id}/info`，平台订阅该主题后落库，
- * 实现电量、信号、MAC、硬件版本、固件版本、经纬度等属性的实时上报。
+ * 实现电量、信号、SSID、IP、MAC、硬件版本、固件版本、经纬度等属性的实时上报。
  *
  * 两个入口互补：
  *   1. MQTT 上行（主）：订阅 `device/+/info`，设备发布即写入（毫秒级）
@@ -15,6 +15,8 @@
  * {
  *   "battery": 85,                  // 电量百分比 0-100
  *   "signal": -65,                  // 信号强度 dBm（负值）
+ *   "ssid": "Office-5G",            // 设备当前连接的 Wi-Fi 名称
+ *   "ip": "192.168.1.101",          // 设备当前 IP 地址
  *   "mac": "AA:BB:CC:DD:EE:FF",     // MAC 地址
  *   "hardware_version": "HW-1.2",   // 硬件版本
  *   "firmware_version": "v2.1.0",   // 固件版本
@@ -107,6 +109,20 @@ export function applyDeviceInfo(device, info) {
     fields.push('signal = ?');
     params.push(signal);
     updated.push('signal');
+  }
+
+  const ssid = String(data.ssid ?? data.wifi_ssid ?? data.wifiSsid ?? '').trim();
+  if (ssid) {
+    fields.push('ssid = ?');
+    params.push(ssid.slice(0, 64));
+    updated.push('ssid');
+  }
+
+  const ip = String(data.ip ?? data.ip_address ?? data.ipaddr ?? data.local_ip ?? '').trim();
+  if (ip) {
+    fields.push('ip = ?');
+    params.push(ip.slice(0, 64));
+    updated.push('ip');
   }
 
   const mac = String(data.mac ?? data.mac_address ?? '').trim();

@@ -1,11 +1,11 @@
 <template>
-  <view class="login-page">
-    <view class="hero">
+  <view class="login-page anim-page">
+    <view class="hero anim-drop">
       <text class="hero-title">IoT 设备管理</text>
       <text class="hero-sub">移动端 · 随时掌握设备动态</text>
     </view>
 
-    <view class="panel">
+    <view class="panel anim-rise" style="animation-delay: 80ms">
       <view class="tabs">
         <text class="tab" :class="{ active: mode === 'login' }" @click="mode = 'login'">登录</text>
         <text class="tab" :class="{ active: mode === 'register' }" @click="mode = 'register'">注册</text>
@@ -19,7 +19,7 @@
         <text class="label">密码</text>
         <input class="input" v-model="form.password" password placeholder="请输入密码" placeholder-class="ph" />
       </view>
-      <view class="field" v-if="mode === 'register'">
+      <view class="field anim-rise" v-if="mode === 'register'">
         <text class="label">昵称（选填）</text>
         <input class="input" v-model="form.nickname" placeholder="请输入昵称" placeholder-class="ph" />
       </view>
@@ -28,7 +28,7 @@
         {{ loading ? '请稍候…' : mode === 'login' ? '登 录' : '注 册' }}
       </button>
 
-      <view class="server-row" @click="goServer">
+      <view class="server-row tap" @click="goServer">
         <text class="server-label">服务器：{{ serverLabel }}</text>
         <text class="server-change">切换 ›</text>
       </view>
@@ -125,15 +125,34 @@ function goServer() {
   margin-bottom: 36rpx;
 }
 .tab {
+  position: relative;
+  display: inline-block;
   font-size: 34rpx;
   font-weight: 600;
   color: #8a8f99;
   margin-right: 48rpx;
   padding-bottom: 12rpx;
+  transition: color 0.22s var(--ease-out);
+}
+/* 下划线用 scaleX 过渡，切换页签时不再瞬间跳变 */
+.tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 6rpx;
+  border-radius: 3rpx;
+  background: #2b6de8;
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 0.26s var(--ease-out);
 }
 .tab.active {
   color: #2b6de8;
-  border-bottom: 6rpx solid #2b6de8;
+}
+.tab.active::after {
+  transform: scaleX(1);
 }
 .field {
   margin-bottom: 28rpx;

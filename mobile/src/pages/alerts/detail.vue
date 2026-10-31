@@ -1,5 +1,5 @@
 <template>
-  <view class="adetail" v-if="alert">
+  <view class="adetail anim-page" v-if="alert">
     <!-- 右上角 3 点菜单触发按钮 -->
     <view class="more-anchor">
       <view class="more-btn" @click="toggleMenu">
@@ -9,7 +9,7 @@
       </view>
     </view>
     <!-- 标题区：设备名 + SN/产品 -->
-    <view class="head">
+    <view class="head anim-drop">
       <text class="head-title">{{ alert.device_name || '平台告警' }}</text>
       <text class="head-sub">{{ subLine }}</text>
     </view>
@@ -22,7 +22,7 @@
     </view>
 
     <!-- 正文 -->
-    <view class="body">
+    <view class="body anim-rise" style="animation-delay: 60ms">
       <text class="content">{{ alert.content }}</text>
 
       <template v-if="alert.status === 'handled'">
@@ -45,17 +45,17 @@
     </view>
 
     <!-- 右上角 3 点菜单 -->
-    <view class="more-mask" v-if="menuVisible" @click="menuVisible = false">
-      <view class="menu" :style="{ top: menuTop + 'px', right: '12px' }" @click.stop>
-        <view class="menu-item" v-if="alert.status !== 'handled'" @click="handleAlert">
+    <view class="more-mask anim-mask" v-if="menuVisible" @click="menuVisible = false">
+      <view class="menu anim-pop" :style="{ top: menuTop + 'px', right: '12px' }" @click.stop>
+        <view class="menu-item tap" v-if="alert.status !== 'handled'" @click="handleAlert">
           <text class="menu-ico">✓</text>
           <text class="menu-txt">标记处理</text>
         </view>
-        <view class="menu-item" @click="copyContent">
+        <view class="menu-item tap" @click="copyContent">
           <text class="menu-ico">⧉</text>
           <text class="menu-txt">复制内容</text>
         </view>
-        <view class="menu-item" v-if="alert.device_name" @click="goDevice">
+        <view class="menu-item tap" v-if="alert.device_name" @click="goDevice">
           <text class="menu-ico">›</text>
           <text class="menu-txt">查看设备</text>
         </view>
@@ -367,6 +367,7 @@ onShow(() => {})
   box-shadow: 0 8rpx 40rpx rgba(0, 0, 0, 0.16);
   padding: 8rpx 0;
   min-width: 260rpx;
+  transform-origin: top right;
 }
 .menu-item {
   display: flex;

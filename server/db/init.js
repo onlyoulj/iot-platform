@@ -62,6 +62,7 @@ db.exec(`
     firmware_version TEXT DEFAULT '',
     status TEXT DEFAULT 'inactive',
     ip TEXT DEFAULT '--',
+    ssid TEXT DEFAULT '--',
     mac TEXT DEFAULT '--',
     location TEXT DEFAULT '',
     -- 设备信息上报字段（MQTT device/{id}/info 或 HTTP /report-info 更新）
@@ -325,6 +326,8 @@ db.exec(`
  * 新增字段（设备通过 MQTT device/{id}/info 上报）：
  *   battery        电量百分比（0-100）
  *   signal         信号强度（dBm，负值，如 -65）
+ *   ssid           设备当前连接的 Wi-Fi 名称
+ *   ip             设备当前 IP 地址
  *   hardware_version 硬件版本号
  *   longitude      经度
  *   latitude       纬度
@@ -337,6 +340,7 @@ function migrateDeviceColumns() {
   const columns = [
     ['battery', "INTEGER DEFAULT NULL"],
     ['signal', "INTEGER DEFAULT NULL"],
+    ['ssid', "TEXT DEFAULT '--'"],
     ['hardware_version', "TEXT DEFAULT ''"],
     ['longitude', "REAL DEFAULT NULL"],
     ['latitude', "REAL DEFAULT NULL"],
@@ -535,21 +539,21 @@ if (productCount === 0) {
 
   // 设备种子数据
   const insertDevice = db.prepare(`
-    INSERT INTO devices (name, device_name, product_id, product_name, firmware_version, status, ip, mac, location, last_online, active_time)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO devices (name, device_name, product_id, product_name, firmware_version, status, ip, ssid, mac, location, last_online, active_time)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertProp = db.prepare(`
     INSERT INTO device_props (device_id, prop_name, prop_value) VALUES (?, ?, ?)
   `);
 
   const deviceData = [
-    ['网关-华东-A001', 'GW-10001', 1, '智能网关 GW-S1', 'v2.1.0', 'online', '192.168.1.101', 'AA:BB:CC:DD:01:01', '上海·浦东', '2026-05-05 22:15', '2025-12-01 10:00'],
-    ['网关-华东-A002', 'GW-10002', 1, '智能网关 GW-S1', 'v2.0.3', 'online', '192.168.1.102', 'AA:BB:CC:DD:01:02', '上海·徐汇', '2026-05-05 22:10', '2025-11-15 14:30'],
-    ['传感器-车间-B015', 'SN-8801', 2, '温湿度传感器 TH-200', 'v1.3.2', 'offline', '10.0.2.15', 'AA:BB:CC:DD:02:15', '苏州·工业园', '2026-05-05 21:30', '2026-01-10 09:00'],
-    ['烟感-仓库-C003', 'SF-3303', 3, '烟雾报警器 SF-100', 'v1.5.0', 'online', '10.0.3.3', 'AA:BB:CC:DD:03:03', '杭州·余杭', '2026-05-05 22:00', '2026-02-20 16:00'],
-    ['门锁-前台-D001', 'DL-5001', 4, '智能门锁 DL-500', 'v3.0.0', 'online', '192.168.10.1', 'AA:BB:CC:DD:04:01', '北京·朝阳', '2026-05-05 22:18', '2026-03-01 08:00'],
-    ['网关-华南-E001', 'GW-10018', 1, '智能网关 GW-S1', 'v2.1.0', 'online', '172.16.0.18', 'AA:BB:CC:DD:01:18', '深圳·南山', '2026-05-05 22:12', '2025-10-20 11:00'],
-    ['传感器-实验室-F008', 'SN-8808', 2, '温湿度传感器 TH-200', 'v1.3.2', 'inactive', '--', 'AA:BB:CC:DD:02:08', '成都·高新', null, null],
+    ['网关-华东-A001', 'GW-10001', 1, '智能网关 GW-S1', 'v2.1.0', 'online', '192.168.1.101', 'Office-5G', 'AA:BB:CC:DD:01:01', '上海·浦东', '2026-05-05 22:15', '2025-12-01 10:00'],
+    ['网关-华东-A002', 'GW-10002', 1, '智能网关 GW-S1', 'v2.0.3', 'online', '192.168.1.102', 'Office-5G', 'AA:BB:CC:DD:01:02', '上海·徐汇', '2026-05-05 22:10', '2025-11-15 14:30'],
+    ['传感器-车间-B015', 'SN-8801', 2, '温湿度传感器 TH-200', 'v1.3.2', 'offline', '10.0.2.15', 'Workshop-2.4G', 'AA:BB:CC:DD:02:15', '苏州·工业园', '2026-05-05 21:30', '2026-01-10 09:00'],
+    ['烟感-仓库-C003', 'SF-3303', 3, '烟雾报警器 SF-100', 'v1.5.0', 'online', '10.0.3.3', 'Warehouse-2.4G', 'AA:BB:CC:DD:03:03', '杭州·余杭', '2026-05-05 22:00', '2026-02-20 16:00'],
+    ['门锁-前台-D001', 'DL-5001', 4, '智能门锁 DL-500', 'v3.0.0', 'online', '192.168.10.1', 'Lobby-5G', 'AA:BB:CC:DD:04:01', '北京·朝阳', '2026-05-05 22:18', '2026-03-01 08:00'],
+    ['网关-华南-E001', 'GW-10018', 1, '智能网关 GW-S1', 'v2.1.0', 'online', '172.16.0.18', 'Shenzhen-Office', 'AA:BB:CC:DD:01:18', '深圳·南山', '2026-05-05 22:12', '2025-10-20 11:00'],
+    ['传感器-实验室-F008', 'SN-8808', 2, '温湿度传感器 TH-200', 'v1.3.2', 'inactive', '--', '--', 'AA:BB:CC:DD:02:08', '成都·高新', null, null],
   ];
   const deviceProps = [
     [[1, 2], ['温度', '湿度', '信号强度', '运行时长'], [['26.5°C', '25.8°C'], ['62%', '58%'], ['-45dBm', '-52dBm'], ['72天', '58天']]],

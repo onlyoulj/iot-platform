@@ -1,11 +1,11 @@
 <template>
-  <view class="alerts">
+  <view class="alerts anim-page">
     <!-- 统计条 -->
-    <view class="stat-bar">
-      <view class="s-item"><text class="s-num">{{ stats.unhandled ?? '-' }}</text><text class="s-label">未处理</text></view>
-      <view class="s-item"><text class="s-num">{{ stats.critical ?? '-' }}</text><text class="s-label">严重</text></view>
-      <view class="s-item"><text class="s-num">{{ stats.handled ?? '-' }}</text><text class="s-label">已处理</text></view>
-      <view class="s-item"><text class="s-num">{{ stats.total ?? '-' }}</text><text class="s-label">累计</text></view>
+    <view class="stat-bar anim-drop">
+      <view class="s-item"><text class="s-num">{{ countUp.values.unhandled ?? '-' }}</text><text class="s-label">未处理</text></view>
+      <view class="s-item"><text class="s-num">{{ countUp.values.critical ?? '-' }}</text><text class="s-label">严重</text></view>
+      <view class="s-item"><text class="s-num">{{ countUp.values.handled ?? '-' }}</text><text class="s-label">已处理</text></view>
+      <view class="s-item"><text class="s-num">{{ countUp.values.total ?? '-' }}</text><text class="s-label">累计</text></view>
     </view>
 
     <!-- 筛选 -->
@@ -16,7 +16,13 @@
     </view>
 
     <!-- 告警列表 -->
-    <view class="card alert-card" v-for="a in list" :key="a.id" @click="goDetail(a)">
+    <view
+      class="card alert-card anim-rise tap"
+      v-for="(a, i) in list"
+      :key="a.id"
+      :style="{ animationDelay: (i % 10) * 40 + 'ms' }"
+      @click="goDetail(a)"
+    >
       <view class="a-top">
         <text class="a-level" :class="a.level">{{ levelText(a.level) }}</text>
         <text class="a-time">{{ a.created_at }}</text>
@@ -28,7 +34,7 @@
       </view>
     </view>
 
-    <view class="empty" v-if="!list.length && !loading">
+    <view class="empty anim-rise" v-if="!list.length && !loading">
       <text>暂无告警</text>
     </view>
     <view class="load-more" v-if="list.length">
@@ -41,6 +47,7 @@
 import { ref } from 'vue'
 import { onShow, onReachBottom, onPullDownRefresh } from '@dcloudio/uni-app'
 import { alertApi } from '../../utils/api'
+import { useCountUp } from '../../utils/motion'
 
 const filterTabs = [
   { label: '全部', value: '' },
@@ -48,7 +55,8 @@ const filterTabs = [
   { label: '已处理', value: 'handled' },
 ]
 
-const stats = ref({})
+// 统计数字滚动：首次从 0 过渡到实际值，刷新时从旧值过渡
+const countUp = useCountUp(['unhandled', 'critical', 'handled', 'total'])
 const filter = ref('')
 const list = ref([])
 const page = ref(1)
@@ -83,9 +91,9 @@ async function load(append = false) {
 
 async function loadStats() {
   try {
-    stats.value = (await alertApi.stats()) || {}
+    countUp.update(await alertApi.stats())
   } catch (e) {
-    stats.value = {}
+    countUp.update({})
   }
 }
 
@@ -130,6 +138,7 @@ onReachBottom(() => {
   font-size: 40rpx;
   font-weight: 700;
   color: #30343d;
+  font-variant-numeric: tabular-nums;
 }
 .s-label {
   font-size: 22rpx;
@@ -147,6 +156,7 @@ onReachBottom(() => {
   background: #ffffff;
   padding: 8rpx 30rpx;
   border-radius: 26rpx;
+  transition: color 0.2s var(--ease-out), background-color 0.2s var(--ease-out);
 }
 .ftab.active {
   color: #ffffff;

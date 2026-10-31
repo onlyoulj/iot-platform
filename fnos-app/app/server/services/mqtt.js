@@ -147,7 +147,7 @@ function connect() {
     logConnectionEvent('connect');
     // 订阅设备上行主题（通配符匹配所有设备）：
     //   device/+/uplink —— 升级进度 / 心跳
-    //   device/+/info   —— 设备信息上报（电量/信号/MAC/硬件版本/固件版本/经纬度）
+    //   device/+/info   —— 设备信息上报（电量/信号/SSID/IP/MAC/硬件版本/固件版本/经纬度）
     client.subscribe(UPLINK_TOPICS, { qos: 1 }, (err) => {
       if (err) {
         console.warn('[MQTT] 订阅上行主题失败:', err.message);

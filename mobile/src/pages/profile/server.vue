@@ -1,6 +1,6 @@
 <template>
-  <view class="server-page">
-    <view class="card">
+  <view class="server-page anim-page">
+    <view class="card anim-rise">
       <text class="sec-title">当前服务器</text>
       <text class="current">{{ currentUrl }}</text>
 
@@ -12,10 +12,10 @@
       <text class="tip">支持任意部署了本平台后端的服务器地址，需带 /api 前缀，如 http://主机:3000/api</text>
     </view>
 
-    <view class="card">
+    <view class="card anim-rise" style="animation-delay: 80ms">
       <text class="sec-title">快捷选择</text>
       <view
-        class="server-item"
+        class="server-item tap"
         v-for="s in serverOptions"
         :key="s.url"
         :class="{ active: s.url === currentUrl }"
@@ -25,7 +25,7 @@
           <text class="s-label">{{ s.label }}</text>
           <text class="s-url">{{ s.url }}</text>
         </view>
-        <text class="s-check" v-if="s.url === currentUrl">✓</text>
+        <text class="s-check anim-badge" v-if="s.url === currentUrl">✓</text>
       </view>
     </view>
   </view>

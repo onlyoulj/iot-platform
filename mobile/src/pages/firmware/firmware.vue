@@ -1,20 +1,25 @@
 <template>
-  <view class="firmware">
+  <view class="firmware anim-page">
     <!-- 筛选 -->
     <view class="filter-bar">
       <input class="search" v-model="search" placeholder="搜索固件名/版本" placeholder-class="ph" @confirm="reload" confirm-type="search" />
       <view class="status-tabs">
         <text v-for="s in statusTabs" :key="s.value" class="status-tab" :class="{ active: status === s.value }" @click="switchStatus(s.value)">{{ s.label }}</text>
       </view>
-      <view class="filter-tag" v-if="product">
+      <view class="filter-tag anim-panel" v-if="product">
         <text>产品：{{ product }}</text>
-        <text class="clear" @click="clearProduct">✕</text>
+        <text class="clear tap-sm" @click="clearProduct">✕</text>
       </view>
     </view>
 
     <!-- 固件列表 -->
     <view class="list">
-      <view class="card fw-card" v-for="f in list" :key="f.id">
+      <view
+        class="card fw-card anim-rise tap"
+        v-for="(f, i) in list"
+        :key="f.id"
+        :style="{ animationDelay: (i % 10) * 40 + 'ms' }"
+      >
         <view class="fw-top">
           <text class="fw-name">{{ f.name }}</text>
           <text class="fw-status" :class="f.status">{{ statusText(f.status) }}</text>
@@ -35,13 +40,13 @@
           <text class="fw-desc">{{ f.desc }}</text>
         </view>
         <view class="fw-actions">
-          <text v-if="f.status === 'draft'" class="act-btn publish" @click="confirmPublish(f)">发布</text>
-          <text v-if="f.status !== 'deprecated'" class="act-btn deprecate" @click="confirmDeprecate(f)">废弃</text>
-          <text class="act-btn del" @click="confirmDelete(f)">删除</text>
+          <text v-if="f.status === 'draft'" class="act-btn publish tap-sm" @click="confirmPublish(f)">发布</text>
+          <text v-if="f.status !== 'deprecated'" class="act-btn deprecate tap-sm" @click="confirmDeprecate(f)">废弃</text>
+          <text class="act-btn del tap-sm" @click="confirmDelete(f)">删除</text>
         </view>
       </view>
 
-      <view class="empty" v-if="!list.length && !loading">
+      <view class="empty anim-rise" v-if="!list.length && !loading">
         <text>暂无固件</text>
       </view>
       <view class="load-more" v-if="list.length">
@@ -50,11 +55,11 @@
     </view>
 
     <!-- 上传按钮 -->
-    <view class="fab" @click="openUpload">+</view>
+    <view class="fab anim-pop tap-sm" style="animation-delay: 120ms" @click="openUpload">+</view>
 
     <!-- 上传弹层 -->
-    <view class="modal" v-if="uploadVisible" @click="uploadVisible = false">
-      <view class="modal-content" @click.stop>
+    <view class="modal anim-mask" v-if="uploadVisible" @click="uploadVisible = false">
+      <view class="modal-content anim-sheet" @click.stop>
         <view class="modal-title">上传固件</view>
         <scroll-view scroll-y class="form-scroll">
           <view class="field">
@@ -90,8 +95,9 @@
             <textarea class="textarea" v-model="uploadForm.desc" placeholder="可选，描述本次更新内容" placeholder-class="ph" />
           </view>
         </scroll-view>
-        <view class="upload-progress" v-if="uploading">
-          <text>上传中… {{ uploadProgress }}%</text>
+        <view class="upload-progress anim-panel" v-if="uploading">
+          <view class="up-track"><view class="up-fill" :style="{ width: uploadProgress + '%' }" /></view>
+          <text class="up-text">上传中… {{ uploadProgress }}%</text>
         </view>
         <view class="modal-actions">
           <button class="btn-cancel" @click="uploadVisible = false">取消</button>
@@ -366,6 +372,7 @@ onReachBottom(() => {
   background: #f5f6fa;
   padding: 8rpx 28rpx;
   border-radius: 26rpx;
+  transition: color 0.2s var(--ease-out), background-color 0.2s var(--ease-out);
 }
 .status-tab.active {
   color: #ffffff;
@@ -466,7 +473,7 @@ onReachBottom(() => {
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 100;
+  z-index: 1000;
   display: flex;
   align-items: flex-end;
 }
@@ -545,9 +552,28 @@ onReachBottom(() => {
 }
 .upload-progress {
   padding: 16rpx 36rpx;
-  text-align: center;
-  font-size: 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+.up-track {
+  flex: 1;
+  height: 12rpx;
+  background: #eef1f6;
+  border-radius: 6rpx;
+  overflow: hidden;
+}
+.up-fill {
+  height: 100%;
+  border-radius: 6rpx;
+  background: linear-gradient(90deg, #5a9cf8, #2b6de8);
+  transition: width 0.3s var(--ease-out);
+}
+.up-text {
+  flex-shrink: 0;
+  font-size: 22rpx;
   color: #2b6de8;
+  font-variant-numeric: tabular-nums;
 }
 .modal-actions {
   display: flex;

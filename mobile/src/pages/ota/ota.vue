@@ -1,5 +1,5 @@
 <template>
-  <view class="ota">
+  <view class="ota anim-page">
     <!-- 筛选 -->
     <view class="filter-bar">
       <input class="search" v-model="search" placeholder="搜索任务名称" placeholder-class="ph" @confirm="reload" confirm-type="search" />
@@ -10,7 +10,13 @@
 
     <!-- 任务列表 -->
     <view class="list">
-      <view class="card task-card" v-for="t in list" :key="t.id" @click="goDetail(t)">
+      <view
+        class="card task-card anim-rise tap"
+        v-for="(t, i) in list"
+        :key="t.id"
+        :style="{ animationDelay: (i % 10) * 40 + 'ms' }"
+        @click="goDetail(t)"
+      >
         <view class="task-top">
           <text class="task-name">{{ t.name }}</text>
           <text class="task-status" :class="t.status">{{ statusText(t.status) }}</text>
@@ -25,7 +31,7 @@
         </view>
         <!-- 进度条 -->
         <view class="progress-row" v-if="t.total">
-          <view class="progress-bar">
+          <view class="progress-bar" :class="{ running: t.status === 'running' }">
             <view class="progress-done" :style="{ width: pct(t.done, t.total) + '%' }" />
             <view class="progress-fail" :style="{ width: pct(t.failed, t.total) + '%' }" v-if="t.failed" />
           </view>
@@ -37,16 +43,16 @@
         </view>
       </view>
 
-      <view class="empty" v-if="!list.length && !loading"><text>暂无升级任务</text></view>
+      <view class="empty anim-rise" v-if="!list.length && !loading"><text>暂无升级任务</text></view>
       <view class="load-more" v-if="list.length"><text>{{ hasMore ? '上拉加载更多' : '没有更多了' }}</text></view>
     </view>
 
     <!-- 创建任务 FAB -->
-    <view class="fab" @click="openCreate">+</view>
+    <view class="fab anim-pop tap-sm" style="animation-delay: 120ms" @click="openCreate">+</view>
 
     <!-- 创建任务弹层 -->
-    <view class="modal" v-if="formVisible" @click="formVisible = false">
-      <view class="modal-content" @click.stop>
+    <view class="modal anim-mask" v-if="formVisible" @click="formVisible = false">
+      <view class="modal-content anim-sheet" @click.stop>
         <view class="modal-title">创建升级任务</view>
         <scroll-view scroll-y class="form-scroll">
           <view class="field">
@@ -328,8 +334,9 @@ onReachBottom(() => {
   font-size: 24rpx;
   color: #5a6070;
   background: #f5f6fa;
-  padding: 8rpx 24rpx;
+  padding: 8rpx 28rpx;
   border-radius: 26rpx;
+  transition: color 0.2s var(--ease-out), background-color 0.2s var(--ease-out);
 }
 .status-tab.active { color: #ffffff; background: #2b6de8; }
 .task-top {
@@ -379,9 +386,22 @@ onReachBottom(() => {
   display: flex;
   overflow: hidden;
 }
-.progress-done { background: #22b07d; }
-.progress-fail { background: #f0654f; }
-.progress-text { font-size: 22rpx; color: #5a6070; }
+.progress-done { background: #22b07d; transition: width 0.6s var(--ease-out); }
+.progress-fail { background: #f0654f; transition: width 0.6s var(--ease-out); }
+.progress-bar.running .progress-done {
+  background-image: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.3) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.3) 50%,
+    rgba(255, 255, 255, 0.3) 75%,
+    transparent 75%
+  );
+  background-size: 20rpx 20rpx;
+  animation: anim-stripes 0.8s linear infinite;
+}
+.progress-text { font-size: 22rpx; color: #5a6070; font-variant-numeric: tabular-nums; }
 .task-meta {
   display: flex;
   justify-content: space-between;
@@ -416,7 +436,7 @@ onReachBottom(() => {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 100;
+  z-index: 1000;
   display: flex;
   align-items: flex-end;
 }
@@ -478,6 +498,7 @@ onReachBottom(() => {
   background: #f5f6fa;
   padding: 10rpx 28rpx;
   border-radius: 24rpx;
+  transition: color 0.2s var(--ease-out), background-color 0.2s var(--ease-out);
 }
 .radio-btn.active { color: #ffffff; background: #2b6de8; }
 .modal-actions {

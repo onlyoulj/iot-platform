@@ -419,7 +419,7 @@ router.get('/meta/products', canView, (req, res) => {
 /**
  * POST /api/devices/:id/info
  * 手动设置设备信息（调试 / 后台补录用；设备正常应通过 MQTT device/{id}/info 上报）
- * body: battery / signal / mac / hardware_version / firmware_version / longitude / latitude
+ * body: battery / signal / ssid / ip / mac / hardware_version / firmware_version / longitude / latitude
  */
 router.post('/:id/info', canEdit, (req, res) => {
   const device = accessibleDevice(req, res);

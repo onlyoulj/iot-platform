@@ -299,12 +299,12 @@ GET /api/subscribe/:key/download?token=<HMAC>&version=<可选>
 
 ### 7. 设备信息上报（HTTP 兜底，可选）
 
-不支持 MQTT 的设备可走 HTTP 上报设备信息（电量/信号/MAC/硬件版本/固件版本/经纬度）：
+不支持 MQTT 的设备可走 HTTP 上报设备信息（电量/信号/SSID/IP/MAC/硬件版本/固件版本/经纬度）：
 
 ```bash
 curl -X POST "http://<host>:3000/api/subscribe/9/info?token=<订阅token>" \
   -H "Content-Type: application/json" \
-  -d '{"battery":85,"signal":-65,"mac":"AA:BB:CC:DD:EE:FF","hardware_version":"HW-1.2.0","longitude":112.938814,"latitude":28.228209}'
+  -d '{"battery":85,"signal":-65,"ssid":"Office-5G","ip":"192.168.1.101","mac":"AA:BB:CC:DD:EE:FF","hardware_version":"HW-1.2.0","longitude":112.938814,"latitude":28.228209}'
 ```
 
 所有字段均可选，只更新提供的字段。详见 [MQTT.md](./MQTT.md) §5.3（字段别名与归一化规则同 MQTT 通道）。
@@ -382,7 +382,7 @@ mosquitto_sub -h 129.204.31.17 -p 1883 \
 | `shadow_set` | 管理端下发期望值（物模型） | 应用 `desired` 到本地，执行后上报 `shadow_report` 回写 `reported` |
 | `test` | 管理端「测试消息」按钮 | 连通性验证 |
 
-设备上报态：`device/{id}/uplink` 承载升级进度 / 心跳，`device/{id}/info` 承载设备信息（电量 / 信号 / MAC / 硬件 / 固件版本 / 经纬度，字段别名与归一化规则见 [MQTT.md](./MQTT.md) §5.3）；物模型属性上报后写入影子 `reported` 与属性历史。控制指令完整信封与回执格式见 [API.md](./API.md) §2.2。
+设备上报态：`device/{id}/uplink` 承载升级进度 / 心跳，`device/{id}/info` 承载设备信息（电量 / 信号 / SSID / IP / MAC / 硬件 / 固件版本 / 经纬度，字段别名与归一化规则见 [MQTT.md](./MQTT.md) §5.3）；物模型属性上报后写入影子 `reported` 与属性历史。控制指令完整信封与回执格式见 [API.md](./API.md) §2.2。
 
 ---
 
@@ -563,7 +563,7 @@ c.loop_forever()
 ```bash
 curl -X POST "http://<host>:3000/api/subscribe/9/info?token=<订阅token>" \
   -H "Content-Type: application/json" \
-  -d '{"battery":85,"signal":-65,"mac":"AA:BB:CC:DD:EE:FF","hardware_version":"HW-1.2.0","firmware_version":"v2.1.0","longitude":112.938814,"latitude":28.228209}'
+  -d '{"battery":85,"signal":-65,"ssid":"Office-5G","ip":"192.168.1.101","mac":"AA:BB:CC:DD:EE:FF","hardware_version":"HW-1.2.0","firmware_version":"v2.1.0","longitude":112.938814,"latitude":28.228209}'
 ```
 
 ---

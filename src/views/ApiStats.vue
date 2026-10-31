@@ -39,7 +39,15 @@
       <el-col :xs="24" :lg="16">
         <div class="chart-card">
           <div class="chart-header"><h3>慢请求 Top 10</h3></div>
-          <el-table :data="slowData" size="small" style="width: 100%" empty-text="暂无慢请求" max-height="300">
+          <el-table
+            :data="slowData"
+            size="small"
+            style="width: 100%"
+            empty-text="暂无慢请求"
+            max-height="300"
+            :row-style="{ cursor: 'pointer' }"
+            @row-click="openDetail"
+          >
             <el-table-column prop="method" label="方法" width="70" />
             <el-table-column prop="path" label="路径" show-overflow-tooltip>
               <template #default="{ row }">
@@ -61,6 +69,11 @@
             </el-table-column>
             <el-table-column prop="created_at" label="时间" width="140">
               <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="72" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click.stop="openDetail(row)">查看</el-button>
+              </template>
             </el-table-column>
           </el-table>
         </div>
@@ -112,7 +125,16 @@
               <el-icon><Refresh /></el-icon> 刷新
             </el-button>
           </div>
-          <el-table :data="recentList" size="small" style="width: 100%" v-loading="recentLoading" empty-text="暂无调用记录" max-height="420">
+          <el-table
+            :data="recentList"
+            size="small"
+            style="width: 100%"
+            v-loading="recentLoading"
+            empty-text="暂无调用记录"
+            max-height="420"
+            :row-style="{ cursor: 'pointer' }"
+            @row-click="openDetail"
+          >
             <el-table-column prop="method" label="方法" width="70">
               <template #default="{ row }">
                 <el-tag :type="methodTagType(row.method)" size="small" effect="plain">{{ row.method }}</el-tag>
@@ -152,6 +174,11 @@
             <el-table-column prop="created_at" label="时间" width="150" sortable>
               <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
             </el-table-column>
+            <el-table-column label="操作" width="72" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click.stop="openDetail(row)">查看</el-button>
+              </template>
+            </el-table-column>
           </el-table>
           <div class="table-pagination">
             <el-pagination
@@ -168,6 +195,40 @@
         </div>
       </el-col>
     </el-row>
+
+    <!-- 调用详情 -->
+    <el-drawer v-model="detailVisible" title="API 调用详情" size="560px" destroy-on-close>
+      <template v-if="detailRow">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="时间">{{ formatDateTime(detailRow.created_at) }}</el-descriptions-item>
+          <el-descriptions-item label="方法">
+            <el-tag :type="methodTagType(detailRow.method)" size="small" effect="plain">{{ detailRow.method }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="请求路径">
+            <span class="mono">{{ orDash(detailRow.path) }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="归一化路由">
+            <span class="mono">{{ orDash(detailRow.route) }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="状态码">
+            <el-tag :type="statusTagType(detailRow.status)" size="small" effect="plain">{{ detailRow.status }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="耗时">
+            <span :class="{ slow: detailRow.duration >= 1000 }">{{ detailRow.duration }} ms</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="客户端 IP">{{ orDash(detailRow.ip) }}</el-descriptions-item>
+          <el-descriptions-item label="来源">
+            <el-tag :type="clientTagType(detailRow.client)" size="small">{{ clientLabel(detailRow.client) }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="调用者">{{ orDash(detailRow.user_name) }}</el-descriptions-item>
+        </el-descriptions>
+
+        <div class="drawer-section">
+          <h4>原始记录</h4>
+          <pre class="detail-json">{{ detailJson }}</pre>
+        </div>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -365,6 +426,16 @@ async function loadRecent() {
   }
 }
 
+/* ------------------------- 调用详情 ------------------------- */
+const detailVisible = ref(false)
+const detailRow = ref(null)
+const detailJson = computed(() => (detailRow.value ? JSON.stringify(detailRow.value, null, 2) : ''))
+
+function openDetail(row) {
+  detailRow.value = row
+  detailVisible.value = true
+}
+
 onMounted(() => {
   loadAll()
   loadRecent()
@@ -386,5 +457,26 @@ onMounted(() => {
 .slow {
   color: #f56c6c;
   font-weight: 600;
+}
+.drawer-section {
+  margin-top: 18px;
+}
+.drawer-section h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.detail-json {
+  margin: 0;
+  padding: 12px;
+  max-height: 360px;
+  overflow: auto;
+  background: #f5f7fa;
+  border-radius: 6px;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>

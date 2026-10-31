@@ -1,7 +1,7 @@
 <template>
-  <view class="pdetail" v-if="product">
+  <view class="pdetail anim-page" v-if="product">
     <!-- 顶部概要卡 -->
-    <view class="hero">
+    <view class="hero anim-drop">
       <view class="hero-head">
         <view class="hero-icon" :style="{ background: product.color }">
           <text class="hero-icon-txt">{{ product.name.slice(0, 1) }}</text>
@@ -28,7 +28,7 @@
     </view>
 
     <!-- 产品数据 -->
-    <view class="card">
+    <view class="card anim-rise" style="animation-delay: 60ms">
       <text class="sec-title">产品数据</text>
       <view class="kv"><text class="k">节点类型</text><text class="v">{{ product.node_type }}</text></view>
       <view class="kv"><text class="k">联网方式</text><text class="v">{{ product.net_type }}</text></view>
@@ -38,9 +38,9 @@
     </view>
 
     <!-- 产品下设备 -->
-    <view class="card">
+    <view class="card anim-rise" style="animation-delay: 100ms">
       <text class="sec-title">接入设备（{{ devices.length }}）</text>
-      <view class="dev-row" v-for="d in devices" :key="d.id" @click="goDevice(d)">
+      <view class="dev-row tap" v-for="d in devices" :key="d.id" @click="goDevice(d)">
         <view class="dot" :class="d.status" />
         <text class="dev-name">{{ d.name || d.device_name }}</text>
         <text class="dev-sn mono">{{ d.device_name }}</text>
@@ -50,7 +50,7 @@
     </view>
 
     <!-- 物模型属性 -->
-    <view class="card">
+    <view class="card anim-rise" style="animation-delay: 140ms">
       <text class="sec-title">物模型属性（{{ props.length }}）</text>
       <view class="prop-item" v-for="prop in props" :key="prop.id">
         <view class="prop-main">
@@ -66,7 +66,7 @@
     </view>
 
     <!-- 操作 -->
-    <view class="card actions">
+    <view class="card actions anim-rise" style="animation-delay: 180ms">
       <button class="btn-primary" @click="openEdit">修改产品信息</button>
       <button class="btn-danger" :disabled="!!product.device_count" @click="handleDelete">
         {{ product.device_count ? '有设备接入，无法删除' : '删除产品' }}
@@ -74,8 +74,8 @@
     </view>
 
     <!-- 编辑弹层 -->
-    <view class="mask" v-if="editing" @click="editing = false">
-      <view class="sheet" @click.stop>
+    <view class="mask anim-mask" v-if="editing" @click="editing = false">
+      <view class="sheet anim-sheet" @click.stop>
         <view class="sheet-head">
           <text class="sheet-title">修改产品信息</text>
           <text class="sheet-close" @click="editing = false">✕</text>
@@ -330,6 +330,11 @@ function modeText(mode) {
   align-items: center;
   padding: 22rpx 0;
   border-bottom: 1rpx solid #f0f1f4;
+  transition: transform 150ms var(--ease-soft), opacity 150ms var(--ease-soft);
+}
+.dev-row:active {
+  transform: translateX(4rpx);
+  opacity: 0.8;
 }
 .dev-row:last-child {
   border-bottom: none;
@@ -444,7 +449,7 @@ function modeText(mode) {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 100;
+  z-index: 1000;
   display: flex;
   align-items: flex-end;
 }

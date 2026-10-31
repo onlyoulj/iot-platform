@@ -27,7 +27,7 @@
 | --- | --- | --- |
 | 下行（服务器 → 设备） | `device/{id}/downlink` | 设备**订阅**此主题接收指令 |
 | 上行（设备 → 服务器） | `device/{id}/uplink` | 设备**发布**此主题上报状态（升级进度/心跳） |
-| 上行（设备 → 服务器） | `device/{id}/info` | 设备**发布**此主题上报设备信息（电量/信号/MAC/硬件版本/固件版本/经纬度） |
+| 上行（设备 → 服务器） | `device/{id}/info` | 设备**发布**此主题上报设备信息（电量/信号/SSID/IP/MAC/硬件版本/固件版本/经纬度） |
 
 `{id}` 可以是设备的**数字 ID**（如 `9`）或 **DeviceName/SN**（如 `led-light`）。服务器会**同时**向 `device/{id}` 与 `device/{deviceName}` 两个下行主题发布，设备用任一标识订阅都能收到；上行同理，用 ID 或 SN 发布均可被平台识别。
 
@@ -202,6 +202,8 @@ c.loop_forever()
 {
   "battery": 85,                   // 电量百分比 0-100（也接受 0-1 小数，自动 ×100）
   "signal": -65,                   // 信号强度 dBm 负值（也接受 0-100 质量百分比）
+  "ssid": "Office-5G",             // 设备当前连接的 Wi-Fi 名称
+  "ip": "192.168.1.101",           // 设备当前 IP 地址
   "mac": "AA:BB:CC:DD:EE:FF",      // MAC 地址
   "hardware_version": "HW-1.2.0",  // 硬件版本
   "firmware_version": "v2.1.0",    // 固件版本
@@ -217,6 +219,8 @@ c.loop_forever()
 | --- | --- |
 | `battery` | `bat`、`power` |
 | `signal` | `rssi`、`csq` |
+| `ssid` | `wifi_ssid`、`wifiSsid` |
+| `ip` | `ip_address`、`ipaddr`、`local_ip` |
 | `mac` | `mac_address` |
 | `hardware_version` | `hw_version`、`hardware` |
 | `firmware_version` | `fw_version` |
@@ -226,7 +230,8 @@ c.loop_forever()
 也支持外层包裹格式：`{ "type": "info", "data": { ...上述字段... } }`。
 
 平台行为：
-- 逐字段归一化后写入 `devices` 表（电量夹取 0-100；信号正数按质量百分比映射到 dBm；经纬度越界丢弃）
+- 逐字段归一化后写入 `devices` 表（电量夹取 0-100；信号正数按质量百分比映射到 dBm；经纬度越界丢弃；SSID/IP 去除首尾空白后落库）
+- 设备详情页在 MAC 上方展示最近一次上报的 SSID 与 IP
 - 经纬度存在且未传 `location` 时，自动生成 `"纬度, 经度"` 文本
 - 上报视为**在线心跳**：刷新 `last_online`，`inactive`/`offline` 设备自动置为 `online`（`fault` 状态保持不掩盖故障）
 - 同时触碰 Redis 在线心跳缓存
@@ -236,7 +241,7 @@ c.loop_forever()
 ```bash
 curl -X POST "http://<平台地址>:3000/api/subscribe/9/info?token=<订阅token>" \
   -H "Content-Type: application/json" \
-  -d '{"battery":85,"signal":-65,"mac":"AA:BB:CC:DD:EE:FF","hardware_version":"HW-1.2.0","longitude":112.938814,"latitude":28.228209}'
+  -d '{"battery":85,"signal":-65,"ssid":"Office-5G","ip":"192.168.1.101","mac":"AA:BB:CC:DD:EE:FF","hardware_version":"HW-1.2.0","longitude":112.938814,"latitude":28.228209}'
 ```
 
 **管理端手动补录**（后台调试用，需 `device:edit` 权限）：

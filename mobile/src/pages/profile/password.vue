@@ -1,6 +1,6 @@
 <template>
-  <view class="pwd-page">
-    <view class="card">
+  <view class="pwd-page anim-page">
+    <view class="card anim-rise">
       <view class="field">
         <text class="label">原密码</text>
         <input class="input" v-model="form.oldPassword" password placeholder="请输入原密码" placeholder-class="ph" />

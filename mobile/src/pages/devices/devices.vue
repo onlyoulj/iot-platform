@@ -1,10 +1,10 @@
 <template>
-  <view class="devices">
+  <view class="devices anim-page">
     <!-- 搜索与筛选 -->
     <view class="filter-bar">
       <view class="search-row">
         <input class="search" v-model="search" placeholder="搜索设备名称" placeholder-class="ph" @confirm="reload" confirm-type="search" />
-        <view class="group-btn" :class="{ active: showGroups }" @click="toggleGroups">
+        <view class="group-btn tap-sm" :class="{ active: showGroups }" @click="toggleGroups">
           <text>{{ currentGroupName || '分组' }} ▾</text>
         </view>
       </view>
@@ -16,30 +16,36 @@
     </view>
 
     <!-- 分组筛选下拉 -->
-    <view class="group-panel" v-if="showGroups">
-      <view class="gp-item" :class="{ active: groupId === '' }" @click="chooseGroup('')">
+    <view class="group-panel anim-panel" v-if="showGroups">
+      <view class="gp-item tap" :class="{ active: groupId === '' }" @click="chooseGroup('')">
         <text>全部设备</text>
         <text class="gp-count">{{ groupTotalCount }}</text>
       </view>
-      <view class="gp-item" :class="{ active: groupId === '0' }" @click="chooseGroup('0')">
+      <view class="gp-item tap" :class="{ active: groupId === '0' }" @click="chooseGroup('0')">
         <text>未分组</text>
       </view>
-      <view class="gp-item" v-for="g in flatGroups" :key="g.id" :class="{ active: String(groupId) === String(g.id) }" @click="chooseGroup(g.id)">
+      <view class="gp-item tap" v-for="g in flatGroups" :key="g.id" :class="{ active: String(groupId) === String(g.id) }" @click="chooseGroup(g.id)">
         <text :style="{ paddingLeft: g.depth * 24 + 'rpx' }">{{ g.name }}</text>
         <text class="gp-count" v-if="g.device_count">{{ g.device_count }}</text>
       </view>
       <view class="gp-empty" v-if="!flatGroups.length"><text>暂无分组</text></view>
     </view>
-    <view class="mask" v-if="showGroups" @click="showGroups = false" />
+    <view class="mask anim-mask" v-if="showGroups" @click="showGroups = false" />
 
     <!-- 设备列表 -->
     <view class="list">
-      <view class="card dev-card" v-for="d in list" :key="d.id" @click="goDetail(d)">
+      <view
+        class="card dev-card anim-rise tap"
+        v-for="(d, i) in list"
+        :key="d.id"
+        :style="{ animationDelay: (i % 10) * 40 + 'ms' }"
+        @click="goDetail(d)"
+      >
         <view class="dev-top">
           <text class="dev-name">{{ d.name || d.device_name }}</text>
           <view class="dev-actions">
-            <text class="act-btn edit" @click.stop="openEdit(d)">编辑</text>
-            <text class="act-btn del" @click.stop="confirmDelete(d)">删除</text>
+            <text class="act-btn edit tap-sm" @click.stop="openEdit(d)">编辑</text>
+            <text class="act-btn del tap-sm" @click.stop="confirmDelete(d)">删除</text>
           </view>
         </view>
         <view class="dev-info">
@@ -54,7 +60,7 @@
         </view>
       </view>
 
-      <view class="empty" v-if="!list.length && !loading">
+      <view class="empty anim-rise" v-if="!list.length && !loading">
         <text>暂无设备</text>
       </view>
       <view class="load-more" v-if="list.length">
@@ -63,11 +69,11 @@
     </view>
 
     <!-- 新增按钮 -->
-    <view class="fab" @click="openCreate">+</view>
+    <view class="fab anim-pop tap-sm" style="animation-delay: 120ms" @click="openCreate">+</view>
 
     <!-- 设备表单弹层 -->
-    <view class="modal" v-if="formVisible" @click="formVisible = false">
-      <view class="modal-content" @click.stop>
+    <view class="modal anim-mask" v-if="formVisible" @click="formVisible = false">
+      <view class="modal-content anim-sheet" @click.stop>
         <view class="modal-title">{{ editing ? '编辑设备' : '新增设备' }}</view>
         <scroll-view scroll-y class="form-scroll">
           <view class="field">
@@ -360,6 +366,8 @@ onReachBottom(() => {
   border-radius: 36rpx;
   white-space: nowrap;
   flex-shrink: 0;
+  transition: transform 140ms var(--ease-soft), opacity 140ms var(--ease-soft),
+    color 0.2s var(--ease-out), background-color 0.2s var(--ease-out);
 }
 .group-btn.active {
   color: #2b6de8;
@@ -379,6 +387,7 @@ onReachBottom(() => {
   background: #f5f6fa;
   padding: 8rpx 28rpx;
   border-radius: 26rpx;
+  transition: color 0.2s var(--ease-out), background-color 0.2s var(--ease-out);
 }
 .status-tab.active {
   color: #ffffff;
@@ -405,6 +414,8 @@ onReachBottom(() => {
   border-bottom: 1rpx solid #f5f6fa;
   font-size: 27rpx;
   color: #30343d;
+  transition: transform 150ms var(--ease-soft), opacity 150ms var(--ease-soft),
+    color 0.2s var(--ease-out), background-color 0.2s var(--ease-out);
 }
 .gp-item.active {
   color: #2b6de8;
@@ -542,7 +553,7 @@ onReachBottom(() => {
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.45);
-  z-index: 100;
+  z-index: 1000;
   display: flex;
   align-items: flex-end;
 }

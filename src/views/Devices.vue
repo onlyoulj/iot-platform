@@ -334,6 +334,7 @@
               {{ dictValue(DEVICE_STATUS, drawerDevice.status) }}
             </el-tag>
           </el-descriptions-item>
+          <el-descriptions-item label="SSID">{{ orDash(drawerDevice.ssid) }}</el-descriptions-item>
           <el-descriptions-item label="IP 地址">{{ orDash(drawerDevice.ip) }}</el-descriptions-item>
           <el-descriptions-item label="MAC 地址">
             <span class="mono">{{ orDash(drawerDevice.mac) }}</span>
