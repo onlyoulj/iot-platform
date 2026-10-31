@@ -357,7 +357,7 @@ user_groups 1───N users          user_groups 1───N group_permissions
 | `device_online_stats` | 仪表盘在线数快照（`date` PK + `online_count`/`total_count`，幂等建表） |
 | `device_groups` | 设备分组自引用树（`parent_id` → 父分组，顶层 `null`） |
 | `device_metrics` | 电量/信号趋势底座（SQLite，Redis 热窗口双写） |
-| `device_control_logs` | 远程控制指令日志（`cmd_id`/`command`/`status`/`result`/`acked_at`） |
+| `device_control_logs` | 远程控制指令日志（`cmd_id`/`action`/`params`/`status`/`result`/`acked_at`） |
 | `alert_rules` | 告警规则（`metric`/`operator`/`threshold`/`level`/`cooldown`/`product_name`） |
 | `alert_channels` | 通知渠道（`type`/`config`(JSON)/`levels`） |
 | `thing_properties` | 产品物模型属性定义（`identifier`/`data_type`/`access_mode`/`unit`） |
@@ -454,7 +454,7 @@ MQTT 通道另有 `mqtt-repush.js` 在设备上线（`uplink`/`info`）时防抖
 | 能力 | 入口 / 接口 | 说明 |
 | --- | --- | --- |
 | 指标趋势 | `GET /api/devices/:id/metrics` | 电量/信号历史，SQLite 底座 + Redis 热窗口双写，>500 点分桶降采样 |
-| 远程控制 | `POST /api/devices/:id/command` | 经 MQTT `downlink` 下发指令，`device_control_logs` 记录；`control_ack` 回执推进 `sent→delivered→success/timeout` |
+| 远程控制 | `POST /api/devices/:id/command` | 经 MQTT `downlink` 下发 `{ type:'control', data:{ action, ...params } }`，`device_control_logs` 记录；`control_ack` 回执推进 `sent→delivered→success/timeout` |
 | 设备影子 | `GET/PUT/POST /api/devices/:id/shadow*` | 物模型 `desired`/`reported` 双态，期望值校验后下发 `shadow_set` |
 | 属性历史 | `GET /api/devices/:id/props-history` | 物模型数值属性 `device_prop_history`（EAV，60s 去重） |
 | 生命周期时间轴 | `GET /api/devices/:id/timeline` | 聚合告警 / 控制 / 升级 / MQTT / 影子 / 创建激活六类事件 |

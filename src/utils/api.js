@@ -35,7 +35,7 @@ export const deviceApi = {
   metrics: (id, range = '24h') => request.get(`/devices/${id}/metrics`, { range }),
   /** 远程控制指令历史 */
   commands: (id, limit = 50) => request.get(`/devices/${id}/commands`, { limit }),
-  /** 下发远程控制指令：{ command, params } → { cmd_id, delivered, topics } */
+  /** 下发远程控制指令：{ action, params } → { cmd_id, delivered, topics } */
   command: (id, data) => request.post(`/devices/${id}/command`, data),
   /** 批量移动设备到分组：{ ids, group_id }（group_id 为 null 表示移出分组） */
   batchGroup: (data) => request.post('/devices/batch-group', data),

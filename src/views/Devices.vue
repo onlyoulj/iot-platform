@@ -510,15 +510,18 @@
           </div>
 
           <el-form label-position="top" size="small" class="ctrl-form">
-            <el-form-item label="指令模板">
-              <el-select v-model="ctrl.command" style="width: 100%" @change="onCommandPreset">
+            <el-form-item label="动作模板">
+              <el-select v-model="ctrl.action" style="width: 100%" @change="onCommandPreset">
                 <el-option
                   v-for="opt in CTRL_COMMANDS"
-                  :key="opt.value"
+                  :key="opt.action"
                   :label="opt.label"
-                  :value="opt.value"
+                  :value="opt.action"
                 />
               </el-select>
+            </el-form-item>
+            <el-form-item v-if="ctrl.action === 'custom'" label="动作名称">
+              <el-input v-model="ctrl.customAction" placeholder="如 reboot / set_config" />
             </el-form-item>
             <el-form-item label="参数（JSON）">
               <el-input
@@ -546,7 +549,7 @@
                 <el-tag :type="ctrlStatus(c.status).type" size="small">
                   {{ ctrlStatus(c.status).text }}
                 </el-tag>
-                <span class="ctrl-item__cmd">{{ c.command }}</span>
+                <span class="ctrl-item__cmd">{{ c.action }}</span>
                 <span class="ctrl-item__time">{{ formatDateTime(c.created_at) }}</span>
               </div>
               <div v-if="c.params" class="ctrl-item__params">{{ c.params }}</div>
@@ -1215,13 +1218,15 @@ function showDetail(row) {
 
 const canControl = computed(() => hasPermission('device:edit'))
 
-/** 指令模板预设 */
+/** 动作模板预设（action 即下行 data.action，params 会展开到 data） */
 const CTRL_COMMANDS = [
-  { value: 'reboot', label: '重启设备', params: '' },
-  { value: 'sync_time', label: '同步时间', params: '' },
-  { value: 'get_status', label: '查询状态', params: '' },
-  { value: 'set_config', label: '设置配置', params: '{\n  "interval": 60\n}' },
-  { value: 'custom', label: '自定义指令', params: '' },
+  { action: 'reboot', label: '重启设备', params: '' },
+  { action: 'sync_time', label: '同步时间', params: '' },
+  { action: 'get_status', label: '查询状态', params: '' },
+  { action: 'switch', label: '开关控制（switch）', params: '{\n  "switch": true\n}' },
+  { action: 'set_config', label: '设置上报间隔', params: '{\n  "interval": 60\n}' },
+  { action: 'reset', label: '恢复出厂', params: '' },
+  { action: 'custom', label: '自定义动作', params: '' },
 ]
 
 const CTRL_STATUS_MAP = {
@@ -1236,7 +1241,8 @@ function ctrlStatus(s) {
 }
 
 const ctrl = reactive({
-  command: 'reboot',
+  action: 'reboot',
+  customAction: '',
   paramsText: '',
   paramsError: '',
   sending: false,
@@ -1249,7 +1255,7 @@ let cmdPollTimer = null
 let ctrlDeviceId = null
 
 function onCommandPreset(val) {
-  const preset = CTRL_COMMANDS.find((c) => c.value === val)
+  const preset = CTRL_COMMANDS.find((c) => c.action === val)
   ctrl.paramsText = preset?.params || ''
   ctrl.paramsError = ''
 }
@@ -1272,7 +1278,11 @@ function parseParams() {
   const text = ctrl.paramsText.trim()
   if (!text) return { ok: true, value: undefined }
   try {
-    return { ok: true, value: JSON.parse(text) }
+    const value = JSON.parse(text)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return { ok: false, error: '参数必须是 JSON 对象' }
+    }
+    return { ok: true, value }
   } catch (err) {
     return { ok: false, error: `参数不是合法 JSON：${err.message}` }
   }
@@ -1281,6 +1291,12 @@ function parseParams() {
 async function sendCommand() {
   const device = drawerDevice.value
   if (!device) return
+
+  const action = ctrl.action === 'custom' ? ctrl.customAction.trim() : ctrl.action
+  if (!action) {
+    ElMessage.warning('请填写自定义动作名称')
+    return
+  }
 
   const parsed = parseParams()
   if (!parsed.ok) {
@@ -1293,7 +1309,9 @@ async function sendCommand() {
   let result
   try {
     result = await deviceApi.command(device.id, {
-      command: ctrl.command,
+      action,
+      // 兼容尚未升级的旧后端：旧版只读 command
+      command: action,
       params: parsed.value,
     })
   } catch (err) {
@@ -1304,7 +1322,7 @@ async function sendCommand() {
   ctrl.sending = false
 
   if (result.delivered) {
-    ElMessage.success(`指令「${ctrl.command}」已下发，等待设备回执`)
+    ElMessage.success(`动作「${action}」已下发，等待设备回执`)
   } else {
     ElMessage.warning('指令未送达：MQTT 通道不可用，设备可能离线')
   }

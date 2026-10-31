@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-10-31 控制指令下行报文对齐 MQTT.md（BREAKING）
+
+控制指令下行报文由 `{ type, cmd_id, command, params, timestamp }` 改为：
+
+```json
+{ "type": "control", "timestamp": "...", "data": { "action": "reboot", "delay": 3 } }
+```
+
+- `command` → `data.action`，管理端填写的参数对象展开到 `data` 同级字段。
+- `cmd_id` 不再下发，仅保留在服务端 `device_control_logs` 用于日志与回执关联。
+- `POST /api/devices/:id/command` 请求体改为 `{ action, params }`（服务端仍兼容旧 `command` 字段）；`GET /:id/commands` 返回 `action`。
+- `device_control_logs.command` 列启动时幂等迁移为 `action`，老库无需手工处理。
+- `control_ack` 可省略 `cmd_id`：平台按 topic 中的设备标识匹配最早一条未终态指令；旧固件继续回传 `cmd_id` 也可正常关联。
+- 管理端「远程控制」面板与移动端设备详情控制面板已同步；「自定义动作」可单独填写动作名。
+
+---
+
 ## 2026-10-31 MQTT / API 监控条目支持详情查看
 
 - MQTT 监控页「最近行为」、API 统计页「最近调用」与「慢请求 Top 10」的表格行支持点击打开详情抽屉，也可点行末「查看」按钮。

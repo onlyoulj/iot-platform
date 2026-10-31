@@ -56,9 +56,10 @@
 ## ESP32 设备端（2026-10-14）
 - `esp32/components/app_mqtt/`：ESP-IDF v5 组件，对接上述主题与信封约定；按 type 注册下行分发回调，esp_timer 周期心跳，设备信息/升级状态上报，分片重组；TLS 8883 需内嵌 EMQX CA（README 说明），明文 1883 可快速联调。配套 Skill：esp32-mqtt（用户级）。
 
-## 设备远程控制（2026-10-15）
-- 下行指令信封 `{type:'control', cmd_id, command, params, timestamp}` → device/{id}/downlink；回执 `{type:'control_ack', data:{cmd_id, code, message, result}}` → device/{id}/uplink，services/device-control.js 的 registerControlAck() 更新 device_control_logs（status: sent→delivered→success/failed，60s 未回执 sweep 成 timeout）。
-- 路由 `POST /:id/command`（device:edit）/ `GET /:id/commands`（device:view）；前端详情抽屉「远程控制」面板（指令模板+JSON 参数+历史+回执轮询）。控制与 OTA 共用 downlink 通道，type 区分。
+## 设备远程控制（2026-10-15，2026-10-31 报文升级）
+- 下行指令信封（对齐 MQTT.md §4.2）`{type:'control', timestamp, data:{action, ...params}}` → device/{id}/downlink；参数对象展开到 data 同级，`cmd_id` 不下发（仅服务端日志）。回执 `{type:'control_ack', data:{cmd_id?, code, message, result}}` → device/{id}/uplink；不带 cmd_id 时按 topic 设备匹配最早未终态指令，旧固件回传 cmd_id 仍兼容。services/device-control.js 的 registerControlAck() 更新 device_control_logs（status: sent→delivered→success/failed，60s 未回执 sweep 成 timeout）。
+- 路由 `POST /:id/command`（device:edit，body `{action, params}`，兼容旧 `command`）/ `GET /:id/commands`（device:view，返回 `action`）；`device_control_logs.command` 启动时幂等迁移为 `action`。前端详情抽屉「远程控制」面板（动作模板+JSON 参数+历史+回执轮询），自定义动作单独填动作名；两端预设 7 个动作（重启/同步时间/查询状态/开关/设置上报间隔/恢复出厂/自定义），请求同时带 `action`+`command` 兼容未升级的旧后端。控制与 OTA 共用 downlink 通道，type 区分。
+- ⚠️ 管理端 `.env.development` 的 `VITE_PROXY_TARGET` 指向 NAS `192.168.0.127:3000`；NAS 后端未重启时仍是旧代码（只认 `command`），表现为下发报「指令不能为空」。本机验证须 `VITE_PROXY_TARGET=http://127.0.0.1:3000 npm run dev`，或部署并重启 NAS 后端。
 
 ## 告警规则引擎（2026-10-15）
 - alert_rules 表（metric: battery/signal/offline × operator lt/gt/lte/gte/eq × threshold）+ alerts 补 rule_id/rule_eval_at；services/alert-engine.js evaluateAll() 挂在 device-monitor 60s 扫描的分布式锁内（先扫离线再评估）；冷却=同设备同规则 cooldown 秒内查 alerts.rule_eval_at 不重复；消息模板 {device}/{value}/{threshold}。

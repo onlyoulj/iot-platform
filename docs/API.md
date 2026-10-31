@@ -209,12 +209,12 @@
 **POST `/:id/command` 请求体**
 
 ```json
-{ "command": "reboot", "params": { "delay": 3 } }
+{ "action": "reboot", "params": { "delay": 3 } }
 ```
 
-`params` 缺省 `{}`。响应 `data`: `{ cmd_id, delivered, topics }`；`delivered=true` 表示已通过 MQTT 下行（或 REST API 降级）送达（送达失败时业务 code 为 `500`）。`device_control_logs` 记录每条指令，状态 `sent → delivered → success / failed / timeout`：设备回执 `control_ack` 后推进，60s 内未回执由扫描任务置 `timeout`。
+`params` 缺省 `{}`，必须是 JSON 对象；服务端会把它展开到下行报文的 `data` 中，与 `action` 同级。实际下发的 MQTT 报文为 `{ "type":"control", "timestamp":"...", "data":{ "action":"reboot", "delay":3 } }`（不含 `cmd_id`，见 [MQTT.md](./MQTT.md) §4.2）。响应 `data`: `{ cmd_id, delivered, topics }`；`delivered=true` 表示已通过 MQTT 下行（或 REST API 降级）送达（送达失败时业务 code 为 `500`）。`device_control_logs` 记录每条指令，状态 `sent → delivered → success / failed / timeout`：设备回执 `control_ack` 后推进（回执可省略 `cmd_id`，按设备匹配最早未终态指令），60s 内未回执由扫描任务置 `timeout`。
 
-**GET `/:id/commands` → `data`**：`[{ cmd_id, command, params, status, result, operator, created_at, acked_at }]`（`limit` 默认 50，夹 1–200）。
+**GET `/:id/commands` → `data`**：`[{ cmd_id, action, params, status, result, operator, created_at, acked_at }]`（`limit` 默认 50，夹 1–200）。
 
 **设备影子（双态）**
 

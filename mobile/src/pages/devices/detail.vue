@@ -46,16 +46,20 @@
     <!-- 远程控制 -->
     <view class="card anim-rise" v-if="tab === 'control'">
       <view class="field">
-        <text class="label">指令</text>
-        <picker :range="commandOptions" range-key="label" @change="onPickCommand">
-          <view class="picker">{{ currentCmd?.label || '选择指令模板' }}</view>
+        <text class="label">动作</text>
+        <picker :range="actionOptions" range-key="label" @change="onPickAction">
+          <view class="picker">{{ currentAction?.label || '选择动作模板' }}</view>
         </picker>
+      </view>
+      <view class="field" v-if="currentAction?.action === 'custom'">
+        <text class="label">动作名称 <text class="req">*</text></text>
+        <input class="input" v-model="customAction" placeholder="如 reboot / set_config" placeholder-class="ph" />
       </view>
       <view class="field">
         <text class="label">参数 JSON（选填）</text>
-        <textarea class="textarea" v-model="params" placeholder='{"switch": true}' placeholder-class="ph" :disabled="!currentCmd" />
+        <textarea class="textarea" v-model="params" placeholder='{"delay": 3}' placeholder-class="ph" :disabled="!currentAction" />
       </view>
-      <button class="btn-primary send" :disabled="sending || !currentCmd" @click="sendCommand">
+      <button class="btn-primary send" :disabled="sending || !currentAction" @click="sendCommand">
         {{ sending ? '下发中…' : '下发指令' }}
       </button>
 
@@ -63,7 +67,7 @@
         <text class="sec-title">指令历史（{{ commands.length }}）</text>
         <view class="h-item" v-for="(c, i) in commands" :key="i">
           <view class="h-line">
-            <text class="h-cmd">{{ c.command }}</text>
+            <text class="h-cmd">{{ c.action }}</text>
             <text class="h-status" :class="c.status">{{ cmdStatusText(c.status) }}</text>
           </view>
           <text class="h-params" v-if="c.params && c.params !== '{}'">{{ c.params }}</text>
@@ -396,21 +400,25 @@ function onMetricTap(type, barIndex) {
 
 /* ---------------- 远程控制 ---------------- */
 
-const commandOptions = [
-  { label: '开关（switch）', command: 'switch', params: '{"switch": true}' },
-  { label: '重启（reboot）', command: 'reboot', params: '' },
-  { label: '恢复出厂（reset）', command: 'reset', params: '' },
-  { label: '自定义', command: '', params: '' },
+const actionOptions = [
+  { label: '重启（reboot）', action: 'reboot', params: '' },
+  { label: '同步时间（sync_time）', action: 'sync_time', params: '' },
+  { label: '查询状态（get_status）', action: 'get_status', params: '' },
+  { label: '开关（switch）', action: 'switch', params: '{"switch": true}' },
+  { label: '设置上报间隔（set_config）', action: 'set_config', params: '{"interval": 60}' },
+  { label: '恢复出厂（reset）', action: 'reset', params: '' },
+  { label: '自定义', action: 'custom', params: '' },
 ]
-const cmdIndex = ref(-1)
+const actionIndex = ref(-1)
+const customAction = ref('')
 const params = ref('')
 const sending = ref(false)
 const commands = ref([])
-const currentCmd = computed(() => (cmdIndex.value >= 0 ? commandOptions[cmdIndex.value] : null))
+const currentAction = computed(() => (actionIndex.value >= 0 ? actionOptions[actionIndex.value] : null))
 
-function onPickCommand(e) {
-  cmdIndex.value = Number(e.detail.value)
-  params.value = currentCmd.value?.params || ''
+function onPickAction(e) {
+  actionIndex.value = Number(e.detail.value)
+  params.value = currentAction.value?.params || ''
 }
 
 async function loadCommands() {
@@ -423,6 +431,12 @@ async function loadCommands() {
 }
 
 async function sendCommand() {
+  const action = currentAction.value?.action === 'custom'
+    ? customAction.value.trim()
+    : currentAction.value?.action
+  if (!action) {
+    return uni.showToast({ title: '请填写动作名称', icon: 'none' })
+  }
   let parsed
   const raw = params.value.trim()
   if (raw) {
@@ -431,10 +445,18 @@ async function sendCommand() {
     } catch (e) {
       return uni.showToast({ title: '参数必须是合法 JSON', icon: 'none' })
     }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return uni.showToast({ title: '参数必须是 JSON 对象', icon: 'none' })
+    }
   }
   sending.value = true
   try {
-    await deviceApi.command(deviceId.value, { command: currentCmd.value.command, params: parsed })
+    await deviceApi.command(deviceId.value, {
+      action,
+      // 兼容尚未升级的旧后端：旧版只读 command
+      command: action,
+      params: parsed,
+    })
     uni.showToast({ title: '指令已下发', icon: 'success' })
     setTimeout(loadCommands, 1200)
   } catch (e) {
@@ -755,6 +777,9 @@ onPullDownRefresh(async () => {
   color: #5a6070;
   margin-bottom: 12rpx;
   display: block;
+}
+.req {
+  color: #f0654f;
 }
 .picker {
   background: #f5f6fa;

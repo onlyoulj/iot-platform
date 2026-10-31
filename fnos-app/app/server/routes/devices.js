@@ -134,14 +134,16 @@ router.get('/:id/commands', canView, (req, res) => {
 /**
  * POST /api/devices/:id/command
  * 下发远程控制指令（type=control），经 MQTT 下行通道下发，设备回执走 uplink control_ack
- * body: { command, params }
+ * body: { action, params }
+ * 下行报文：{ type:'control', timestamp, data:{ action, ...params } }
  */
 router.post('/:id/command', canEdit, async (req, res) => {
   const device = accessibleDevice(req, res, 'id, device_name, status');
   if (!device) return;
   try {
     const result = await sendCommand(device, {
-      command: req.body?.command,
+      // 兼容旧调用方：仍传 command 时按 action 处理
+      action: req.body?.action ?? req.body?.command,
       params: req.body?.params,
       operator: req.user?.username,
     });
@@ -243,7 +245,7 @@ router.get('/:id/timeline', canView, (req, res) => {
         SELECT 'alert' AS type, level AS status, content AS title, '' AS detail, created_at AS time
           FROM alerts WHERE device_name = ?
         UNION ALL
-        SELECT 'command', status, command, params, created_at
+        SELECT 'command', status, action, params, created_at
           FROM device_control_logs WHERE device_id = ?
         UNION ALL
         SELECT 'upgrade', status, COALESCE(firmware_version, ''), COALESCE(error_msg, ''), COALESCE(completed_at, created_at)

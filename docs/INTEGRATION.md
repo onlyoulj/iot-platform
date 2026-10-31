@@ -378,7 +378,7 @@ mosquitto_sub -h 129.204.31.17 -p 1883 \
 
 | type | 场景 | 设备动作 |
 | --- | --- | --- |
-| `control` | 管理端远程控制（如 `reboot`） | 执行指令并回执 `control_ack`（含 `cmd_id`/`code`/`message`/`result`），平台据此推进指令状态 `sent→delivered→success/timeout` |
+| `control` | 管理端远程控制（如 `reboot`） | 读取 `data.action` 与同级参数（如 `data.delay`）执行指令；回执 `control_ack`（`code`/`message`/`result`，`cmd_id` 可省略），平台据此推进指令状态 `sent→delivered→success/timeout` |
 | `shadow_set` | 管理端下发期望值（物模型） | 应用 `desired` 到本地，执行后上报 `shadow_report` 回写 `reported` |
 | `test` | 管理端「测试消息」按钮 | 连通性验证 |
 

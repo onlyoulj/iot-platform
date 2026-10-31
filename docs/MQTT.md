@@ -150,6 +150,19 @@ c.loop_forever()
 }
 ```
 
+`data` 固定包含 `action`（动作名，如 `reboot` / `switch` / `set_config`），管理端填写的参数对象会原样展开到 `data` 同级字段（上例的 `delay`）。`action` 为保留字段，参数中同名键会被服务端忽略。
+
+平台不再向下行报文写入 `cmd_id`。设备执行后向 `device/{id}/uplink` 回执：
+
+```json
+{
+  "type": "control_ack",
+  "data": { "code": 0, "message": "ok", "result": {} }
+}
+```
+
+`code = 0`（或 `success: true` / `status: "success"`）表示成功。回执可不带 `cmd_id`，平台按 topic 中的设备标识匹配该设备最早一条未终态指令；仍兼容回传 `cmd_id` 的旧固件。
+
 ### 4.3 平台主动推送的其他事件
 
 | `type` | 触发场景 |

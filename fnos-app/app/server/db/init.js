@@ -118,7 +118,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id INTEGER NOT NULL,
     cmd_id TEXT NOT NULL,
-    command TEXT NOT NULL,
+    action TEXT NOT NULL,
     params TEXT DEFAULT '',
     status TEXT DEFAULT 'sent',
     result TEXT DEFAULT '',
@@ -316,6 +316,21 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_ua_created ON user_activities(created_at);
   CREATE INDEX IF NOT EXISTS idx_ua_action ON user_activities(action);
 `);
+
+/**
+ * 幂等迁移：device_control_logs.command → action
+ * 控制指令报文改为 data.action 后，日志列同步改名；老库自动迁移。
+ */
+function migrateControlActionColumn() {
+  const existing = new Set(
+    db.prepare('PRAGMA table_info(device_control_logs)').all().map((c) => c.name)
+  );
+  if (!existing.has('action') && existing.has('command')) {
+    db.exec('ALTER TABLE device_control_logs RENAME COLUMN command TO action');
+    console.log('[db] device_control_logs.command 已迁移为 action');
+  }
+}
+migrateControlActionColumn();
 
 /**
  * 幂等字段迁移：为 devices 表补齐设备信息上报字段

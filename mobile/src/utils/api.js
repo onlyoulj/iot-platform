@@ -50,6 +50,7 @@ export const deviceApi = {
   propsHistory: (id, identifier, range = '24h') => get(`/devices/${id}/props-history`, { identifier, range }),
   timeline: (id, params) => get(`/devices/${id}/timeline`, params),
   commands: (id, params) => get(`/devices/${id}/commands`, params),
+  /** 下发远程控制指令：{ action, params } */
   command: (id, data) => post(`/devices/${id}/command`, data),
   shadow: (id) => get(`/devices/${id}/shadow`),
   setDesired: (id, data) => put(`/devices/${id}/shadow/desired`, data),
