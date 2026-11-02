@@ -50,6 +50,9 @@
 ## 后端注意
 - routes 里专用路径（如 /stats）必须定义在参数路由 /:id 之前。用户行为埋点用 req.originalUrl（mount 后 req.path 是相对路径）。14 组路由：auth/users/groups/dashboard/devices/firmware/ota/product/alert/subscribe/stats/system/mqtt/mqtt-logs。
 
+## CI（GitHub Actions，2026-11-02）
+- `.github/workflows/node.js.yml`：push/PR `main` + 手动触发；Node 20.x/22.x matrix；单 job 依次跑管理端 `npm run build`、移动端 `npm run build:h5`、后端 `server` 的 `npm ci`（无测试/构建）。setup-node cache 同时挂三个 lockfile；仓库无测试脚本，暂无 `npm test`。
+
 ## 文档体系
 - docs/README.md 索引；ARCHITECTURE/API/INTEGRATION/MQTT/PERFORMANCE/OPTIMIZATION/CHANGELOG.md；tech-doc/ 交付级技术文档独立目录。
 
